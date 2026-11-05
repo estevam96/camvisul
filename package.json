@@ -1,0 +1,27 @@
+{
+  "name": "camvisul",
+  "version": "1.0.0",
+  "description": "Visualizador em tempo real de câmera IP Besder (ICSee) para computador com áudio e vídeo sincronizados",
+  "main": "src/server.js",
+  "scripts": {
+    "setup": "bash scripts/download-go2rtc.sh",
+    "start": "node src/server.js",
+    "start:dev": "node --watch-path=./src src/server.js",
+    "dev": "node --watch-path=./src src/server.js",
+    "test": "node -e \"console.log('Test OK')\""
+  },
+  "keywords": [
+    "icsee",
+    "besder",
+    "xiongmai",
+    "rtsp",
+    "webrtc",
+    "ip-camera"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

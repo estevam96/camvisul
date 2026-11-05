@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>CamVisul • Câmera Besder IP em Tempo Real</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📹</text></svg>">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header Principal -->
+    <header class="app-header glass-card">
+      <div class="header-left">
+        <div class="brand-badge">
+          <span class="status-pulse-dot" id="header-status-dot"></span>
+          <span class="brand-name">CamVisul</span>
+        </div>
+        <div class="camera-info-badge">
+          <span class="cam-model" id="header-cam-model">Besder IP Cam</span>
+          <span class="cam-ip" id="header-cam-ip">--.--.--.--</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="live-clock" id="live-clock">--:--:--</div>
+        <div class="stream-pill" id="stream-quality-pill">1080p Full HD</div>
+      </div>
+
+      <div class="header-right">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-open-settings" title="Configurações de Conexão">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Conexão</span>
+        </button>
+        <button type="button" class="btn btn-outline-danger btn-sm" id="btn-disconnect" title="Desconectar da Câmera">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+            <line x1="12" y1="2" x2="12" y2="12"></line>
+          </svg>
+          <span>Sair</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Área Principal de Vídeo -->
+    <main class="main-viewport">
+      <div class="video-card glass-card" id="video-card-container">
+        <!-- Elemento de Vídeo HTML5 -->
+        <video id="video-player" autoplay playsinline muted></video>
+
+        <!-- Loading Spinner / Overlay -->
+        <div class="video-overlay-state" id="video-loading-state">
+          <div class="spinner"></div>
+          <p id="loading-state-text">Conectando à câmera Besder em tempo real...</p>
+        </div>
+
+        <!-- Alerta Flutuante de Áudio Mudo (Devido à política de autoplay do navegador) -->
+        <button type="button" class="audio-unmute-banner" id="audio-unmute-banner">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <span>Áudio silenciado pelo navegador • <strong>Clique aqui para ouvir</strong></span>
+        </button>
+
+        <!-- Indicador de Status Superior do Vídeo -->
+        <div class="video-top-overlay">
+          <div class="live-tag">
+            <span class="live-dot"></span>
+            AO VIVO
+          </div>
+        </div>
+
+        <!-- Barra de Controle Inferior Flutuante -->
+        <div class="video-controls-bar glass-card">
+          <!-- Play / Pause -->
+          <button type="button" class="ctrl-btn" id="ctrl-play-pause" title="Pausar / Retomar Stream">
+            <svg id="icon-pause" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="6" y="4" width="4" height="16"></rect>
+              <rect x="14" y="4" width="4" height="16"></rect>
+            </svg>
+            <svg id="icon-play" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+          </button>
+
+          <!-- Alternador de Resolução HD / SD -->
+          <div class="quality-switch-group">
+            <button type="button" class="quality-btn active" id="btn-stream-hd" data-stream="besder_main" title="1080p Full HD Principal">HD</button>
+            <button type="button" class="quality-btn" id="btn-stream-sd" data-stream="besder_sub" title="SD Fluido Secundário">SD</button>
+          </div>
+
+          <div class="ctrl-separator"></div>
+
+          <!-- Controle de Áudio -->
+          <div class="audio-control-group">
+            <button type="button" class="ctrl-btn" id="ctrl-audio-toggle" title="Ligar / Desligar Som (Atalho M)">
+              <svg id="icon-audio-on" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              </svg>
+              <svg id="icon-audio-off" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <line x1="23" y1="9" x2="17" y2="15"></line>
+                <line x1="17" y1="9" x2="23" y2="15"></line>
+              </svg>
+            </button>
+            <input type="range" class="volume-slider" id="volume-slider" min="0" max="1" step="0.05" value="0.8" title="Ajustar Volume">
+
+            <!-- Medidor de Nível do Microfone da Câmera (Web Audio API) -->
+            <div class="audio-meter-container" title="Nível de captação do microfone da câmera em tempo real">
+              <span class="audio-meter-label">MIC</span>
+              <div class="audio-meter-track">
+                <div class="audio-meter-fill" id="audio-meter-fill"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ctrl-spacer"></div>
+
+          <!-- Captura de Foto (Snapshot) -->
+          <button type="button" class="ctrl-btn" id="ctrl-snapshot" title="Tirar Foto em Alta Resolução (Atalho S)">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+            <span class="ctrl-btn-text">Foto</span>
+          </button>
+
+          <!-- Picture in Picture -->
+          <button type="button" class="ctrl-btn" id="ctrl-pip" title="Modo Miniatura Flutuante (PiP)">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <rect x="12" y="9" width="8" height="6" rx="1" ry="1"></rect>
+            </svg>
+          </button>
+
+          <!-- Tela Cheia -->
+          <button type="button" class="ctrl-btn" id="ctrl-fullscreen" title="Tela Cheia (Atalho F)">
+            <svg id="icon-fs-enter" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+            </svg>
+            <svg id="icon-fs-exit" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Painel Inferior de Controles Complementares -->
+      <div class="bottom-grid">
+        <!-- Card 1: Controle PTZ (Pan / Tilt / Zoom) -->
+        <div class="card glass-card ptz-card">
+          <div class="card-header">
+            <h3 class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polygon points="12 8 8 12 16 12 12 8"></polygon>
+              </svg>
+              Controle PTZ (Movimento)
+            </h3>
+            <span class="card-subtitle">Use as setas do teclado</span>
+          </div>
+
+          <div class="ptz-content">
+            <!-- D-Pad Direcional -->
+            <div class="ptz-dpad">
+              <button type="button" class="ptz-btn ptz-up" data-pan="0" data-tilt="0.5" title="Mover para Cima (↑)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+              </button>
+              <button type="button" class="ptz-btn ptz-left" data-pan="-0.5" data-tilt="0" title="Mover para Esquerda (←)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <button type="button" class="ptz-btn ptz-center" id="ptz-stop-btn" title="Parar Movimento">
+                <div class="ptz-center-dot"></div>
+              </button>
+              <button type="button" class="ptz-btn ptz-right" data-pan="0.5" data-tilt="0" title="Mover para Direita (→)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+              <button type="button" class="ptz-btn ptz-down" data-pan="0" data-tilt="-0.5" title="Mover para Baixo (↓)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+            </div>
+
+            <!-- Controles de Zoom -->
+            <div class="ptz-zoom-group">
+              <button type="button" class="btn btn-secondary btn-sm ptz-zoom-btn" data-zoom="0.5" title="Aproximar Zoom (+)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                <span>Zoom +</span>
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm ptz-zoom-btn" data-zoom="-0.5" title="Afastar Zoom (-)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                <span>Zoom -</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Informações Técnicas e Diagnósticos -->
+        <div class="card glass-card info-card">
+          <div class="card-header">
+            <h3 class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              Diagnóstico da Câmera
+            </h3>
+            <span class="badge badge-success" id="badge-conn-status">Online</span>
+          </div>
+
+          <div class="diag-list">
+            <div class="diag-item">
+              <span class="diag-label">Endereço IP:</span>
+              <span class="diag-val" id="diag-ip">--</span>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label">Dispositivo:</span>
+              <span class="diag-val" id="diag-model">Besder XM530</span>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label">Firmware:</span>
+              <span class="diag-val" id="diag-fw">ONVIF 16.12</span>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label">Pipeline de Vídeo:</span>
+              <span class="diag-val">H.264 (AVC) • WebRTC Ultra-Low Latency</span>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label">Pipeline de Áudio:</span>
+              <span class="diag-val">G.711 A-law (PCMA) 8kHz Mono</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 3: Galeria de Capturas Recentes -->
+        <div class="card glass-card gallery-card">
+          <div class="card-header">
+            <h3 class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+              Capturas da Sessão
+            </h3>
+            <span class="card-subtitle" id="snapshot-count-badge">0 fotos</span>
+          </div>
+
+          <div class="gallery-container" id="gallery-container">
+            <p class="empty-gallery-msg">Nenhuma foto capturada ainda.<br>Clique em <strong>Foto</strong> ou pressione a tecla <strong>S</strong>.</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal Nativo <dialog> de Conexão e Autenticação (Modern Web Guidance) -->
+  <dialog id="login-dialog" aria-labelledby="dialog-title" closedby="closerequest">
+    <div class="dialog-content glass-card">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <div class="dialog-icon-badge">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </div>
+          <div>
+            <h2 id="dialog-title">Conectar à Câmera Besder</h2>
+            <p class="dialog-desc">Insira as credenciais configuradas no app ICSee</p>
+          </div>
+        </div>
+        <button type="button" class="dialog-close-btn" id="dialog-close-btn" aria-label="Fechar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <form id="login-form" class="login-form">
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="input-ip">Endereço IP da Câmera</label>
+            <input type="text" id="input-ip" name="ip" value="192.168.0.23" required placeholder="Ex: 192.168.0.23">
+          </div>
+          <div class="form-group flex-1">
+            <label for="input-port">Porta RTSP</label>
+            <input type="number" id="input-port" name="port" value="554" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="input-user">Usuário</label>
+          <input type="text" id="input-user" name="user" value="admin" required placeholder="Geralmente admin">
+        </div>
+
+        <div class="form-group">
+          <label for="input-pass">Senha da Câmera</label>
+          <div class="password-wrapper">
+            <input type="password" id="input-pass" name="password" autofocus placeholder="Senha cadastrada no ICSee">
+            <button type="button" class="btn-toggle-pass" id="btn-toggle-pass" title="Mostrar/Ocultar Senha">
+              <svg id="icon-eye-show" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              <svg id="icon-eye-hide" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+            </button>
+          </div>
+          <span class="field-hint">Esta é a senha criada no aplicativo ICSee no celular.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="select-quality">Qualidade de Inicialização</label>
+          <select id="select-quality" name="quality">
+            <option value="main" selected>Principal HD 1080p (Máxima Definição)</option>
+            <option value="sub">Secundário SD (Fluido / Menor Tráfego)</option>
+          </select>
+        </div>
+
+        <div class="form-checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="checkbox-remember" checked>
+            <span>Lembrar credenciais neste computador</span>
+          </label>
+        </div>
+
+        <div class="form-feedback hidden" id="form-feedback"></div>
+
+        <div class="dialog-actions">
+          <button type="submit" class="btn btn-primary btn-block" id="btn-submit-login">
+            <span class="btn-spinner hidden" id="btn-spinner"></span>
+            <span id="btn-submit-text">Conectar à Câmera</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Scripts -->
+  <script src="js/audio-meter.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

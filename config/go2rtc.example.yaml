@@ -1,0 +1,17 @@
+# Configuração do go2rtc para o CamVisul (Modelo de Exemplo)
+# Copie este arquivo para config/go2rtc.yaml para customizar localmente
+api:
+  listen: "127.0.0.1:1984"
+
+rtsp:
+  listen: "127.0.0.1:8554"
+  default_query: "video&audio"
+
+webrtc:
+  listen: ":8555"
+
+# Streams registrados dinamicamente pelo backend ou pré-configurados:
+# streams:
+#   besder_main:
+#     - rtsp://<user>:<password>@<camera-ip>:554/stream0#transport=tcp#backchannel=0
+streams: {}

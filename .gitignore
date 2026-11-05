@@ -1,0 +1,46 @@
+# Dependências
+node_modules/
+package-lock.json.bak
+
+# Configurações com credenciais e senhas locais (NUNCA comitar)
+config/go2rtc.yaml
+!config/go2rtc.example.yaml
+
+# Variáveis de ambiente e credenciais locais (NUNCA comitar)
+.env
+.env.local
+.env.*.local
+
+# Binários executáveis específicos de plataforma
+bin/go2rtc
+!bin/.gitkeep
+
+# Arquivos do sistema operacional
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs e diagnósticos
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editores e IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Arquivos temporários e capturas locais
+*.tmp
+*.bak
+captures/
+snapshots/

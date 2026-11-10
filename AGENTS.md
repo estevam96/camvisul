@@ -131,6 +131,17 @@ Navegadores modernos (Chrome, Safari, Firefox, Edge) bloqueiam reprodução auto
 1. **Pipeline RTSP Nativo:** Removida a dependência de FFmpeg; o stream agora transmite diretamente os codecs nativos H.264 e G.711A (PCMA) pelo motor Go.
 2. **Limpeza Automática de Processos Zumbis:** O método `Go2rtcManager.start()` agora executa uma finalização forçada preventiva de processos residuais para garantir que a instância ativa possua acesso irrestrito à rede local.
 
+### 4.5. Resolução Dinâmica de Portas HTTP (`EADDRINUSE`)
+
+#### Causa Raiz:
+Ao executar múltiplos servidores de desenvolvimento ou recarregar o CamVisul (`npm run start:dev` / `start.sh dev`), a porta padrão `3000` pode estar ocupada por outra instância ou por serviços locais concorrentes, gerando falha fatal de `EADDRINUSE`.
+
+#### Correção Definitiva Aplicada:
+1. **Fallback Sequencial Automático:** Implementada a função `listenWithPortFallback` em `src/server.js`. Caso a porta `3000` esteja ocupada, o servidor tenta automaticamente `3001`, `3002`, `3003`... até encontrar uma porta livre.
+2. **Tolerância a Recarga Rápida (Hot Reload):** Caso a porta inicial esteja em liberação momentânea pelo `--watch`, o sistema aguarda 120ms antes de avançar, evitando saltos de porta desnecessários.
+3. **Arquivo de Estado `.port`:** A porta ativa é registrada no arquivo `.port` (ignorado no git), permitindo que o script `start.sh` abra o navegador exatamente no endereço selecionado.
+4. **URLs Relativas no Frontend:** Toda a camada cliente opera com rotas relativas (`/api/...`), garantindo compatibilidade imediata com qualquer porta alocada.
+
 ---
 
 ## 5. Estrutura de Diretórios do Projeto
@@ -149,6 +160,7 @@ camvisul/
 │   ├── architecture/doc.md    # Decisões de arquitetura e diagrama de fluxo
 │   ├── authentication/doc.md  # Digest Auth RFC 2617 e segurança
 │   ├── camera-protocols/doc.md# Mapeamento técnico da câmera Besder XM530
+│   ├── dynamic-ports/doc.md   # Resolução dinâmica de portas e fallback EADDRINUSE
 │   ├── getting-started/doc.md # Manual de uso e resolução de problemas
 │   ├── ptz-controls/doc.md    # Especificação ONVIF PTZ e atalhos de teclado
 │   ├── realtime-streaming/doc.md # WebRTC, latência e sincronismo de áudio
@@ -160,11 +172,13 @@ camvisul/
 │   └── js/
 │       ├── app.js             # Lógica cliente: WebRTC, PTZ, controles, fallback
 │       └── audio-meter.js     # Analisador Web Audio API do microfone
-└── src/
-    ├── server.js              # Servidor Express, proxies de mídia e APIs
-    ├── go2rtc-manager.js      # Gerenciador de ciclo de vida do processo go2rtc
-    ├── rtsp-auth.js           # Validador de credenciais RTSP Digest Authentication
-    └── onvif-client.js        # Cliente SOAP ONVIF para movimentação PTZ e metadados
+├── src/
+│   ├── server.js              # Servidor Express, proxies de mídia e APIs
+│   ├── go2rtc-manager.js      # Gerenciador de ciclo de vida do processo go2rtc
+│   ├── rtsp-auth.js           # Validador de credenciais RTSP Digest Authentication
+│   └── onvif-client.js        # Cliente SOAP ONVIF para movimentação PTZ e metadados
+└── test/
+    └── port-fallback.test.js  # Testes automatizados de portas concorrentes e fallback
 ```
 
 ---

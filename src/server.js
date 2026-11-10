@@ -28,7 +28,8 @@ if (fs.existsSync(envFile)) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const INITIAL_PORT = parseInt(process.env.PORT || '3000', 10);
+const portFilePath = path.join(__dirname, '..', '.port');
 
 app.use(cors());
 app.use(express.json());
@@ -364,21 +365,82 @@ app.post('/api/disconnect', (req, res) => {
   res.json({ success: true, message: 'Desconectado com sucesso' });
 });
 
+/**
+ * Inicia o servidor HTTP tentando a porta inicial configurada.
+ * Se a porta estiver em uso (EADDRINUSE), tenta a próxima porta disponível sequencialmente (3001, 3002, ...).
+ */
+function listenWithPortFallback(app, initialPort, maxAttempts = 50) {
+  return new Promise((resolve, reject) => {
+    let currentPort = initialPort;
+    let initialPortRetried = false;
+    let attempts = 0;
+
+    function tryListen() {
+      if (attempts >= maxAttempts) {
+        return reject(
+          new Error(`Nenhuma porta disponível encontrada a partir da porta ${initialPort} após ${maxAttempts} tentativas.`)
+        );
+      }
+
+      const server = http.createServer(app);
+
+      server.once('listening', () => {
+        resolve({ server, port: currentPort });
+      });
+
+      server.once('error', (err) => {
+        server.removeAllListeners();
+        try { server.close(); } catch (e) {}
+
+        if (err.code === 'EADDRINUSE') {
+          // Pequena tolerância para reloads rápidos do watch liberarem o socket
+          if (currentPort === initialPort && !initialPortRetried) {
+            initialPortRetried = true;
+            setTimeout(tryListen, 120);
+            return;
+          }
+
+          console.warn(`⚠️ Porta ${currentPort} já está ocupada. Tentando próxima porta: ${currentPort + 1}...`);
+          attempts++;
+          currentPort++;
+          tryListen();
+        } else {
+          reject(err);
+        }
+      });
+
+      server.listen(currentPort);
+    }
+
+    tryListen();
+  });
+}
+
 // Inicialização graciosa
 async function startServer() {
   try {
     await go2rtc.start();
-    const server = app.listen(PORT, () => {
-      console.log(`\n======================================================`);
-      console.log(`🚀 CamVisul rodando com sucesso!`);
-      console.log(`👉 Acesse no seu navegador: http://localhost:${PORT}`);
-      console.log(`📹 CamVisul pronto para conectar na rede local`);
-      console.log(`⚡ Hot Reload Ativo (Node --watch-path=./src)`);
-      console.log(`======================================================\n`);
-    });
+    const { server, port: actualPort } = await listenWithPortFallback(app, INITIAL_PORT);
+
+    // Registra a porta ativa em .port para scripts auxiliares (ex: start.sh)
+    try {
+      fs.writeFileSync(portFilePath, String(actualPort));
+    } catch (e) {}
+
+    console.log(`\n======================================================`);
+    console.log(`🚀 CamVisul rodando com sucesso!`);
+    console.log(`👉 Acesse no seu navegador: http://localhost:${actualPort}`);
+    console.log(`📹 CamVisul pronto para conectar na rede local`);
+    console.log(`⚡ Hot Reload Ativo (Node --watch-path=./src)`);
+    console.log(`======================================================\n`);
 
     const shutdown = (isExit = false) => {
       console.log('\nFinalizando servidor CamVisul...');
+
+      // Limpa arquivo de porta ativa
+      try {
+        if (fs.existsSync(portFilePath)) fs.unlinkSync(portFilePath);
+      } catch (e) {}
 
       // Fecha conexões SSE para que o server.close() não fique travado
       for (const client of sseClients) {

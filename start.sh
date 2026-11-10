@@ -39,11 +39,22 @@ fi
 
 # 5. Inicia o servidor Node.js
 (
-  # Aguarda 1.5s e abre o navegador automaticamente no Mac
-  sleep 1.5
+  # Aguarda o servidor registrar a porta ativa (com fallback para 3000)
+  PORT=3000
+  for i in {1..30}; do
+    if [ -f ".port" ]; then
+      DETECTED_PORT=$(cat .port 2>/dev/null | tr -d '[:space:]')
+      if [ -n "$DETECTED_PORT" ]; then
+        PORT="$DETECTED_PORT"
+        break
+      fi
+    fi
+    sleep 0.1
+  done
+
   if command -v open &> /dev/null; then
-      echo "🌐 Abrindo interface no navegador padrão..."
-      open "http://localhost:3000"
+      echo "🌐 Abrindo interface no navegador padrão (http://localhost:${PORT})..."
+      open "http://localhost:${PORT}"
   fi
 ) &
 

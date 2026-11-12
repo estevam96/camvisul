@@ -108,7 +108,19 @@
     btnTestText: document.getElementById('btn-test-text'),
     btnSaveCamera: document.getElementById('btn-save-camera'),
     btnSaveSpinner: document.getElementById('btn-save-spinner'),
-    btnSaveText: document.getElementById('btn-save-text')
+    btnSaveText: document.getElementById('btn-save-text'),
+
+    // Modal de Descoberta de Câmeras (Discovery)
+    btnOpenDiscovery: document.getElementById('btn-open-discovery'),
+    btnQuickDiscover: document.getElementById('btn-quick-discover'),
+    discoveryDialog: document.getElementById('discovery-dialog'),
+    discoveryDialogCloseBtn: document.getElementById('discovery-dialog-close-btn'),
+    btnCloseDiscovery: document.getElementById('btn-close-discovery'),
+    btnRescanDiscovery: document.getElementById('btn-rescan-discovery'),
+    discoveryStatusBar: document.getElementById('discovery-status-bar'),
+    discoverySpinner: document.getElementById('discovery-spinner'),
+    discoveryStatusText: document.getElementById('discovery-status-text'),
+    discoveredCamerasList: document.getElementById('discovered-cameras-list')
   };
 
   // Preset default ports
@@ -394,9 +406,24 @@
     if (state.currentLayout !== '1x1' || !state.connected) return;
 
     state.retryCount++;
-    if (state.retryCount <= 3) {
-      setLoadingState(true, `Reconectando à câmera (tentativa ${state.retryCount}/3)...`);
+    if (state.retryCount <= 4) {
+      setLoadingState(true, `Reconectando à câmera (tentativa ${state.retryCount}/4)...`);
       if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
+
+      // Se falhou 2 vezes, tenta auto-healing para caso o IP tenha mudado via DHCP
+      if (state.retryCount >= 2) {
+        fetch('/api/cameras/auto-heal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cameraId: state.selectedCameraId })
+        }).then((res) => res.json()).then((data) => {
+          if (data && data.success && data.updated && data.updated.length > 0) {
+            console.log('[Auto-Healing] IP recuperado com sucesso:', data.updated);
+            loadCameras();
+          }
+        }).catch(() => {});
+      }
+
       reconnectTimeoutId = setTimeout(() => {
         if (state.connected && state.currentLayout === '1x1') {
           startWebRtcStream(streamName);
@@ -1200,9 +1227,133 @@
   }
 
   /* ==========================================================================
+     VMS: Descoberta de Câmeras na Rede Local (Discovery)
+     ========================================================================== */
+  function openDiscoveryModal() {
+    if (!elements.discoveryDialog) return;
+    elements.discoveredCamerasList.innerHTML = '';
+    elements.discoveryDialog.showModal();
+    runNetworkDiscovery();
+  }
+
+  function closeDiscoveryModal() {
+    if (!elements.discoveryDialog) return;
+    elements.discoveryDialog.close();
+  }
+
+  async function runNetworkDiscovery() {
+    if (!elements.discoveryStatusBar) return;
+
+    elements.discoverySpinner.classList.remove('hidden');
+    elements.discoveryStatusText.textContent = 'Buscando dispositivos ONVIF e NetIP na rede local...';
+    elements.discoveredCamerasList.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Escaneando sub-rede (2 segundos)...</div>';
+    if (elements.btnRescanDiscovery) elements.btnRescanDiscovery.disabled = true;
+
+    try {
+      const res = await fetch('/api/discovery?timeout=2000');
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Falha ao buscar câmeras');
+      }
+
+      renderDiscoveredCameras(data.cameras || []);
+    } catch (err) {
+      elements.discoveryStatusText.textContent = `Erro na busca: ${err.message}`;
+      elements.discoveredCamerasList.innerHTML = `<div style="padding: 14px; color: var(--accent-red); font-size: 0.85rem;">Erro de varredura: ${escapeHtml(err.message)}</div>`;
+    } finally {
+      elements.discoverySpinner.classList.add('hidden');
+      if (elements.btnRescanDiscovery) elements.btnRescanDiscovery.disabled = false;
+    }
+  }
+
+  function renderDiscoveredCameras(cameras) {
+    if (!elements.discoveredCamerasList) return;
+    elements.discoveredCamerasList.innerHTML = '';
+
+    if (!cameras || cameras.length === 0) {
+      elements.discoveryStatusText.textContent = 'Varredura concluída. Nenhuma câmera adicional detectada.';
+      elements.discoveredCamerasList.innerHTML = `
+        <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+          Nenhum dispositivo de vídeo detectado neste momento.<br>
+          Verifique se a câmera está ligada e conectada na mesma rede Wi-Fi/LAN.
+        </div>
+      `;
+      return;
+    }
+
+    elements.discoveryStatusText.textContent = `${cameras.length} dispositivo(s) encontrado(s) na rede local:`;
+
+    cameras.forEach((cam) => {
+      const card = document.createElement('div');
+      card.className = 'discovered-item-card';
+
+      const macText = cam.mac_address ? ` • MAC: ${cam.mac_address}` : '';
+      const serialText = cam.serial_number ? ` • S/N: ${cam.serial_number}` : '';
+      const portText = `Porta RTSP: ${cam.rtsp_port || 554} / ONVIF: ${cam.onvif_port || 80}`;
+
+      card.innerHTML = `
+        <div class="discovered-item-info">
+          <div class="discovered-item-title">
+            <span>${escapeHtml(cam.name || cam.model || 'Câmera IP')}</span>
+            <span class="badge-discovered-brand">${escapeHtml(cam.brand || 'onvif')}</span>
+            ${cam.alreadyAdded ? '<span style="font-size: 0.7rem; color: var(--accent-green); background: rgba(34,197,94,0.15); padding: 2px 6px; border-radius: 4px;">Cadastrada</span>' : ''}
+          </div>
+          <div class="discovered-item-meta">
+            ${escapeHtml(cam.ip)} • ${portText}${escapeHtml(macText)}${escapeHtml(serialText)}
+          </div>
+        </div>
+        <div>
+          <button type="button" class="btn btn-sm ${cam.alreadyAdded ? 'btn-secondary' : 'btn-primary'} btn-import-discovered">
+            ${cam.alreadyAdded ? 'Reconfigurar' : 'Cadastrar'}
+          </button>
+        </div>
+      `;
+
+      card.querySelector('.btn-import-discovered').addEventListener('click', () => {
+        closeDiscoveryModal();
+        openCameraModalForDiscovered(cam);
+      });
+
+      elements.discoveredCamerasList.appendChild(card);
+    });
+  }
+
+  function openCameraModalForDiscovered(discoveredCam) {
+    openCameraModal();
+    if (elements.camInputName) elements.camInputName.value = discoveredCam.name || `Câmera ${discoveredCam.brand.toUpperCase()}`;
+    if (elements.camSelectBrand) {
+      elements.camSelectBrand.value = discoveredCam.brand || 'generic';
+      applyBrandPresetPorts(discoveredCam.brand || 'generic');
+    }
+    if (elements.camInputIp) elements.camInputIp.value = discoveredCam.ip;
+    if (elements.camInputRtspPort) elements.camInputRtspPort.value = discoveredCam.rtsp_port || 554;
+    if (elements.camInputOnvifPort) elements.camInputOnvifPort.value = discoveredCam.onvif_port || 80;
+    if (elements.camInputPass) elements.camInputPass.focus();
+  }
+
+  /* ==========================================================================
      10. Inicialização de Eventos
      ========================================================================== */
   function setupEventListeners() {
+    if (elements.btnOpenDiscovery) {
+      elements.btnOpenDiscovery.addEventListener('click', openDiscoveryModal);
+    }
+    if (elements.btnQuickDiscover) {
+      elements.btnQuickDiscover.addEventListener('click', () => {
+        closeCameraModal();
+        openDiscoveryModal();
+      });
+    }
+    if (elements.discoveryDialogCloseBtn) {
+      elements.discoveryDialogCloseBtn.addEventListener('click', closeDiscoveryModal);
+    }
+    if (elements.btnCloseDiscovery) {
+      elements.btnCloseDiscovery.addEventListener('click', closeDiscoveryModal);
+    }
+    if (elements.btnRescanDiscovery) {
+      elements.btnRescanDiscovery.addEventListener('click', runNetworkDiscovery);
+    }
     elements.btnOpenSettings.addEventListener('click', () => {
       const cam = state.cameras.find((c) => c.id === state.selectedCameraId) || state.cameras[0] || null;
       openCameraModal(cam);

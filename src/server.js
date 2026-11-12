@@ -13,9 +13,13 @@ const {
   createCamera,
   updateCamera,
   deleteCamera,
+  updateCameraFingerprint,
+  updateCameraIp,
+  findCameraByFingerprint,
   migrateLegacyEnvIfEmpty
 } = require('./db');
 const { CAMERA_PRESETS, getPreset } = require('./camera-presets');
+const { discoverLocalCameras } = require('./discovery');
 
 // Carregar variáveis de ambiente de .env se existir (sem dependência externa)
 const envFile = path.join(__dirname, '..', '.env');
@@ -97,6 +101,25 @@ try {
 } catch (e) {}
 
 /**
+ * Atualiza o fingerprint de hardware (Serial/MAC) de uma câmera em segundo plano
+ */
+async function refreshCameraFingerprint(cam) {
+  try {
+    if (cam.serial_number && cam.mac_address) return;
+    const onvifPort = cam.onvif_port || (cam.brand === 'besder' ? 8899 : 80);
+    const info = await getDeviceInformation(cam.ip, onvifPort, cam.username, cam.password);
+    if (info && (info.serialNumber || info.hardwareId)) {
+      updateCameraFingerprint(cam.id, {
+        serial_number: info.serialNumber || info.hardwareId
+      });
+      console.log(`[Fingerprint] Câmera ${cam.id} (${cam.name}) vinculada ao Serial: ${info.serialNumber || info.hardwareId}`);
+    }
+  } catch (err) {
+    // Silencioso se câmera estiver inacessível no momento
+  }
+}
+
+/**
  * Sincroniza todas as câmeras cadastradas no SQLite com o go2rtc
  */
 async function syncAllCamerasWithGo2rtc() {
@@ -108,6 +131,7 @@ async function syncAllCamerasWithGo2rtc() {
     for (const cam of cameras) {
       try {
         await go2rtc.registerCameraStreams(cam);
+        refreshCameraFingerprint(cam).catch(() => {});
       } catch (err) {
         console.warn(`[go2rtc] Não foi possível registrar streams da câmera ${cam.id} (${cam.name}):`, err.message);
       }
@@ -115,6 +139,97 @@ async function syncAllCamerasWithGo2rtc() {
     console.log(`[go2rtc] Sincronização concluída: ${cameras.length} câmera(s) no banco.`);
   } catch (err) {
     console.error('[go2rtc] Erro ao sincronizar câmeras:', err.message);
+  }
+}
+
+let lastAutoHealingRunTime = 0;
+const AUTO_HEALING_COOLDOWN_MS = 25000;
+let isAutoHealingInProgress = false;
+
+/**
+ * Tenta localizar câmeras cadastradas cujo IP tenha mudado na rede local (Auto-Healing)
+ */
+async function autoHealCameras(targetCameraId = null) {
+  const now = Date.now();
+  if (isAutoHealingInProgress) {
+    return { success: false, reason: 'Em andamento' };
+  }
+  if (now - lastAutoHealingRunTime < AUTO_HEALING_COOLDOWN_MS) {
+    return { success: false, reason: 'Cooldown ativo' };
+  }
+
+  isAutoHealingInProgress = true;
+  lastAutoHealingRunTime = now;
+
+  try {
+    const allCams = getAllCameras({ includeDecryptedPassword: true });
+    if (!allCams || allCams.length === 0) {
+      return { success: false, reason: 'Sem câmeras cadastradas' };
+    }
+
+    console.log('[Auto-Healing] Disparando varredura UDP para verificar IPs de câmeras...');
+    const discovered = await discoverLocalCameras({ timeoutMs: 1800 });
+
+    if (!discovered || discovered.length === 0) {
+      console.log('[Auto-Healing] Nenhuma câmera respondeu às sondas no momento.');
+      return { success: true, updated: [] };
+    }
+
+    const updatedCameras = [];
+
+    for (const cam of allCams) {
+      if (targetCameraId && cam.id !== Number(targetCameraId)) {
+        continue;
+      }
+
+      // Procura correspondência na lista de descobertas por MAC ou Serial
+      const match = discovered.find((d) => {
+        const macMatch = d.mac_address && cam.mac_address &&
+          d.mac_address.toLowerCase() === cam.mac_address.toLowerCase();
+        const allMacMatch = d.all_macs && cam.mac_address &&
+          d.all_macs.some(m => m.toLowerCase() === cam.mac_address.toLowerCase());
+        const serialMatch = d.serial_number && cam.serial_number &&
+          d.serial_number === cam.serial_number;
+        return macMatch || allMacMatch || serialMatch;
+      });
+
+      if (match) {
+        // Atualiza fingerprint no SQLite caso faltasse MAC ou Serial
+        if (!cam.mac_address && match.mac_address) {
+          updateCameraFingerprint(cam.id, { mac_address: match.mac_address });
+        }
+        if (!cam.serial_number && match.serial_number) {
+          updateCameraFingerprint(cam.id, { serial_number: match.serial_number });
+        }
+
+        if (match.ip && match.ip !== cam.ip) {
+          console.log(`[Auto-Healing] ⚡ IP da Câmera ${cam.id} (${cam.name}) mudou de ${cam.ip} para ${match.ip}! Atualizando silenciosamente...`);
+
+          // 1. Atualiza no SQLite
+          updateCameraIp(cam.id, match.ip);
+
+          // 2. Atualiza os streams no go2rtc dinamicamente
+          const updatedCam = getCameraById(cam.id, { includeDecryptedPassword: true });
+          if (go2rtc.isReady) {
+            await go2rtc.registerCameraStreams(updatedCam);
+          }
+
+          updatedCameras.push({
+            id: cam.id,
+            name: cam.name,
+            oldIp: cam.ip,
+            newIp: match.ip
+          });
+        }
+      }
+    }
+
+    return { success: true, updated: updatedCameras };
+  } catch (err) {
+    console.error('[Auto-Healing] Erro durante auto-healing:', err.message);
+    return { success: false, error: err.message };
+  } finally {
+    isAutoHealingInProgress = false;
   }
 }
 
@@ -136,6 +251,40 @@ app.get('/api/presets', (req, res) => {
       hasPtz: p.hasPtz
     }))
   });
+});
+
+/**
+ * Varre a rede local e descobre câmeras IP (ONVIF WS-Discovery e Xiongmai NetIP)
+ */
+app.get('/api/discovery', async (req, res) => {
+  try {
+    const timeoutMs = parseInt(req.query.timeout, 10) || 2000;
+    const discovered = await discoverLocalCameras({ timeoutMs });
+
+    // Enriquecer com status indicando se a câmera já está cadastrada
+    const existingCameras = getAllCameras();
+    const enriched = discovered.map((d) => {
+      const isAlreadyAdded = existingCameras.some((c) =>
+        (d.mac_address && c.mac_address && c.mac_address.toLowerCase() === d.mac_address.toLowerCase()) ||
+        (d.all_macs && c.mac_address && d.all_macs.some(m => m.toLowerCase() === c.mac_address.toLowerCase())) ||
+        (d.serial_number && c.serial_number && c.serial_number === d.serial_number) ||
+        (c.ip === d.ip)
+      );
+      return {
+        ...d,
+        alreadyAdded: isAlreadyAdded
+      };
+    });
+
+    res.json({
+      success: true,
+      total: enriched.length,
+      cameras: enriched
+    });
+  } catch (err) {
+    console.error('[API Discovery] Erro na varredura:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 /**
@@ -406,6 +555,17 @@ app.post('/api/connect', async (req, res) => {
     // 4. Buscar informações do dispositivo via ONVIF (porta 8899)
     const deviceInfo = await getDeviceInformation(targetIp, 8899, user, password);
 
+    // Persiste o fingerprint de hardware na base SQLite se aplicável
+    try {
+      const allCams = getAllCameras();
+      const matchedCam = allCams.find((c) => c.ip === targetIp) || allCams[0];
+      if (matchedCam && (deviceInfo.serialNumber || deviceInfo.hardwareId)) {
+        updateCameraFingerprint(matchedCam.id, {
+          serial_number: deviceInfo.serialNumber || deviceInfo.hardwareId
+        });
+      }
+    } catch (e) {}
+
     // 5. Atualizar estado da sessão
     currentSession = {
       connected: true,
@@ -451,8 +611,8 @@ app.post('/api/connect', async (req, res) => {
  * Rota WebRTC: Negocia a oferta SDP com o go2rtc com retry automático
  */
 app.post('/api/webrtc', async (req, res) => {
+  const streamName = req.query.src || currentSession.activeStream || 'besder_main';
   try {
-    const streamName = req.query.src || currentSession.activeStream || 'besder_main';
     const offerSdp = typeof req.body === 'string' ? req.body : req.body.sdp;
 
     if (!offerSdp) {
@@ -480,8 +640,25 @@ app.post('/api/webrtc', async (req, res) => {
     return res.send(answerSdp);
   } catch (error) {
     console.error('[API WebRTC] Erro final:', error.message);
+
+    // Se o stream falhar por unreachable host / timeout, dispara auto-healing reativo em background
+    if (error.message.includes('host is down') || error.message.includes('timeout') || error.message.includes('operation not permitted')) {
+      const matchCamId = String(streamName).match(/^cam_(\d+)_/);
+      const camId = matchCamId ? Number(matchCamId[1]) : null;
+      autoHealCameras(camId).catch(() => {});
+    }
+
     return res.status(500).send(`Falha na negociação WebRTC: ${error.message}`);
   }
+});
+
+/**
+ * Força verificação e auto-healing de IPs para câmeras registradas
+ */
+app.post('/api/cameras/auto-heal', async (req, res) => {
+  const { cameraId } = req.body || {};
+  const result = await autoHealCameras(cameraId ? Number(cameraId) : null);
+  res.json(result);
 });
 
 /**
@@ -677,8 +854,19 @@ async function startServer() {
     console.log(`⚡ Hot Reload Ativo (Node --watch-path=./src)`);
     console.log(`======================================================\n`);
 
+    // Timer de health-check e auto-healing periódico a cada 60s
+    const healingInterval = setInterval(() => {
+      try {
+        const cams = getAllCameras();
+        if (cams.length > 0) {
+          autoHealCameras().catch(() => {});
+        }
+      } catch (e) {}
+    }, 60000);
+
     const shutdown = (isExit = false) => {
       console.log('\nFinalizando servidor CamVisul...');
+      clearInterval(healingInterval);
 
       // Limpa arquivo de porta ativa
       try {

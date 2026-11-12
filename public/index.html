@@ -34,6 +34,13 @@
       </div>
 
       <div class="header-right">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-open-discovery" title="Buscar Câmeras Ativas na Rede Local">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span>Buscar Rede</span>
+        </button>
         <button type="button" class="btn btn-primary btn-sm" id="btn-add-camera" title="Cadastrar Nova Câmera">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -280,6 +287,16 @@
       <form id="camera-form" class="login-form">
         <input type="hidden" id="cam-input-id" name="id" value="">
 
+        <div style="margin-bottom: 14px;">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-quick-discover" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span>Buscar Câmeras na Rede Local (Auto-Preencher)</span>
+          </button>
+        </div>
+
         <div class="form-row">
           <div class="form-group flex-2">
             <label for="cam-input-name">Nome da Câmera</label>
@@ -353,6 +370,43 @@
           </button>
         </div>
       </form>
+    </div>
+  </dialog>
+
+  <!-- Modal Nativo <dialog> de Descoberta de Câmeras na Rede Local -->
+  <dialog id="discovery-dialog" aria-labelledby="discovery-dialog-title" closedby="closerequest">
+    <div class="dialog-content glass-card" style="max-width: 600px; width: 90vw;">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <div class="dialog-icon-badge">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </div>
+          <div>
+            <h2 id="discovery-dialog-title">Câmeras Detectadas na Rede</h2>
+            <p class="dialog-desc">Varredura automática via ONVIF WS-Discovery e Xiongmai NetIP</p>
+          </div>
+        </div>
+        <button type="button" class="dialog-close-btn" id="discovery-dialog-close-btn" aria-label="Fechar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="discovery-body">
+        <div class="discovery-status-bar" id="discovery-status-bar">
+          <span class="btn-spinner" id="discovery-spinner"></span>
+          <span id="discovery-status-text">Escaneando rede local por câmeras ativas...</span>
+        </div>
+
+        <div class="discovered-cameras-list" id="discovered-cameras-list"></div>
+      </div>
+
+      <div class="dialog-actions" style="margin-top: 16px; display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-secondary" id="btn-rescan-discovery">Escanear Novamente</button>
+        <button type="button" class="btn btn-primary" id="btn-close-discovery">Fechar</button>
+      </div>
     </div>
   </dialog>
 

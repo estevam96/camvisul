@@ -12,6 +12,9 @@ const {
   createCamera,
   updateCamera,
   deleteCamera,
+  updateCameraFingerprint,
+  updateCameraIp,
+  findCameraByFingerprint,
   migrateLegacyEnvIfEmpty,
   db
 } = require('../src/db');
@@ -19,7 +22,7 @@ const { isEncrypted } = require('../src/crypto');
 
 console.log('[Test DB] Iniciando testes do repositório SQLite de câmeras...');
 
-// 1. Inserir câmera de teste
+// 1. Inserir câmera de teste com fingerprint de hardware
 const newCam = createCamera({
   name: 'Câmera Teste Garagem',
   brand: 'intelbras',
@@ -28,27 +31,58 @@ const newCam = createCamera({
   onvif_port: 80,
   username: 'admin',
   password: 'PasswordSuperSegura123!',
-  has_ptz: 1
+  has_ptz: 1,
+  mac_address: '48:2C:67:AA:BB:CC',
+  serial_number: 'SN-INTEL-998877'
 });
 
 assert(newCam.id, 'Deveria gerar um ID auto-increment');
 assert.strictEqual(newCam.name, 'Câmera Teste Garagem');
 assert.strictEqual(newCam.hasPassword, true, 'hasPassword deve ser true');
 assert.strictEqual(newCam.password, undefined, 'A senha nunca deve vir no formato padrão');
-console.log(`✓ Câmera criada com sucesso! ID: ${newCam.id}`);
+assert.strictEqual(newCam.mac_address, '48:2C:67:AA:BB:CC');
+assert.strictEqual(newCam.serial_number, 'SN-INTEL-998877');
+console.log(`✓ Câmera criada com sucesso com MAC e Serial! ID: ${newCam.id}`);
 
 // 2. Verificar que no SQLite a senha está salva cifrada com AES-256-GCM
-const rawRow = db.prepare('SELECT password FROM cameras WHERE id = ?').get(newCam.id);
+const rawRow = db.prepare('SELECT password, mac_address, serial_number FROM cameras WHERE id = ?').get(newCam.id);
 assert(isEncrypted(rawRow.password), 'A senha salva no SQLite DEVE estar cifrada com enc:v1:');
 assert.notStrictEqual(rawRow.password, 'PasswordSuperSegura123!');
-console.log('✓ Senha salva cifrada com sucesso no SQLite!');
+assert.strictEqual(rawRow.mac_address, '48:2C:67:AA:BB:CC');
+console.log('✓ Senha salva cifrada com sucesso e colunas de fingerprint validadas no SQLite!');
 
 // 3. Recuperar com includeDecryptedPassword: true
 const camWithPass = getCameraById(newCam.id, { includeDecryptedPassword: true });
 assert.strictEqual(camWithPass.password, 'PasswordSuperSegura123!', 'Deve decriptar a senha original');
 console.log('✓ Decriptação transparente para streaming validada!');
 
-// 4. Atualizar câmera sem alterar a senha
+// 4. Testar findCameraByFingerprint por MAC e por Serial
+const foundByMac = findCameraByFingerprint({ mac_address: '48:2c:67:aa:bb:cc' }); // case-insensitive
+assert(foundByMac, 'Deve encontrar a câmera pelo MAC address');
+assert.strictEqual(foundByMac.id, newCam.id);
+
+const foundBySerial = findCameraByFingerprint({ serial_number: 'SN-INTEL-998877' });
+assert(foundBySerial, 'Deve encontrar a câmera pelo Serial Number');
+assert.strictEqual(foundBySerial.id, newCam.id);
+console.log('✓ Localização por MAC e Serial Number (findCameraByFingerprint) validada!');
+
+// 5. Testar updateCameraIp (Auto-Healing de IP)
+const healedCam = updateCameraIp(newCam.id, '192.168.1.188');
+assert.strictEqual(healedCam.ip, '192.168.1.188');
+const verifyIp = getCameraById(newCam.id);
+assert.strictEqual(verifyIp.ip, '192.168.1.188');
+console.log('✓ Atualização dinâmica de IP (updateCameraIp) validada!');
+
+// 6. Testar updateCameraFingerprint
+const updatedFp = updateCameraFingerprint(newCam.id, {
+  mac_address: '00:11:22:33:44:55',
+  serial_number: 'SN-UPDATED-001'
+});
+assert.strictEqual(updatedFp.mac_address, '00:11:22:33:44:55');
+assert.strictEqual(updatedFp.serial_number, 'SN-UPDATED-001');
+console.log('✓ Atualização de fingerprint (updateCameraFingerprint) validada!');
+
+// 7. Atualizar câmera sem alterar a senha
 const updatedCam = updateCamera(newCam.id, {
   name: 'Garagem Principal VIP'
 });
@@ -58,7 +92,7 @@ const checkPassAfterUpdate = getCameraById(newCam.id, { includeDecryptedPassword
 assert.strictEqual(checkPassAfterUpdate.password, 'PasswordSuperSegura123!', 'A senha antiga deve permanecer intacta');
 console.log('✓ Atualização preservou a senha encriptada!');
 
-// 5. Testar exclusão
+// 8. Testar exclusão
 const deleted = deleteCamera(newCam.id);
 assert.strictEqual(deleted, true, 'Exclusão deve retornar true');
 assert.strictEqual(getCameraById(newCam.id), null, 'Câmera não deve mais existir');

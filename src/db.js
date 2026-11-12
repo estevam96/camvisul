@@ -26,10 +26,20 @@ db.exec(`
     main_stream_uri TEXT,
     sub_stream_uri TEXT,
     has_ptz INTEGER NOT NULL DEFAULT 1,
+    mac_address TEXT,
+    serial_number TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
+
+// Migração segura para bancos existentes
+try {
+  db.exec('ALTER TABLE cameras ADD COLUMN mac_address TEXT');
+} catch (e) {}
+try {
+  db.exec('ALTER TABLE cameras ADD COLUMN serial_number TEXT');
+} catch (e) {}
 
 /**
  * Normaliza o registro da câmera para a API / consumidor
@@ -50,6 +60,8 @@ function formatCameraRow(row, includeDecryptedPassword = false) {
     main_stream_uri: row.main_stream_uri || '',
     sub_stream_uri: row.sub_stream_uri || '',
     has_ptz: Boolean(row.has_ptz),
+    mac_address: row.mac_address || null,
+    serial_number: row.serial_number || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     hasPassword: Boolean(rawPassword)
@@ -97,7 +109,9 @@ function createCamera(data) {
     channel = 0,
     main_stream_uri = '',
     sub_stream_uri = '',
-    has_ptz = 1
+    has_ptz = 1,
+    mac_address = null,
+    serial_number = null
   } = data;
 
   if (!name || !ip) {
@@ -109,8 +123,8 @@ function createCamera(data) {
   const stmt = db.prepare(`
     INSERT INTO cameras (
       name, brand, ip, rtsp_port, onvif_port, username, password, channel,
-      main_stream_uri, sub_stream_uri, has_ptz, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      main_stream_uri, sub_stream_uri, has_ptz, mac_address, serial_number, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
   `);
 
   const result = stmt.run(
@@ -124,7 +138,9 @@ function createCamera(data) {
     Number(channel) || 0,
     main_stream_uri ? String(main_stream_uri).trim() : null,
     sub_stream_uri ? String(sub_stream_uri).trim() : null,
-    has_ptz ? 1 : 0
+    has_ptz ? 1 : 0,
+    mac_address ? String(mac_address).trim() : null,
+    serial_number ? String(serial_number).trim() : null
   );
 
   return getCameraById(result.lastInsertRowid, { includeDecryptedPassword: false });
@@ -149,6 +165,8 @@ function updateCamera(id, data) {
   const main_stream_uri = data.main_stream_uri !== undefined ? String(data.main_stream_uri).trim() : existing.main_stream_uri;
   const sub_stream_uri = data.sub_stream_uri !== undefined ? String(data.sub_stream_uri).trim() : existing.sub_stream_uri;
   const has_ptz = data.has_ptz !== undefined ? (data.has_ptz ? 1 : 0) : (existing.has_ptz ? 1 : 0);
+  const mac_address = data.mac_address !== undefined ? (data.mac_address ? String(data.mac_address).trim() : null) : existing.mac_address;
+  const serial_number = data.serial_number !== undefined ? (data.serial_number ? String(data.serial_number).trim() : null) : existing.serial_number;
 
   let encryptedPassword;
   if (data.password !== undefined && data.password !== null && data.password !== '') {
@@ -165,7 +183,7 @@ function updateCamera(id, data) {
     UPDATE cameras SET
       name = ?, brand = ?, ip = ?, rtsp_port = ?, onvif_port = ?,
       username = ?, password = ?, channel = ?, main_stream_uri = ?,
-      sub_stream_uri = ?, has_ptz = ?, updated_at = datetime('now')
+      sub_stream_uri = ?, has_ptz = ?, mac_address = ?, serial_number = ?, updated_at = datetime('now')
     WHERE id = ?
   `);
 
@@ -181,10 +199,73 @@ function updateCamera(id, data) {
     main_stream_uri || null,
     sub_stream_uri || null,
     has_ptz,
+    mac_address,
+    serial_number,
     Number(id)
   );
 
   return getCameraById(id, { includeDecryptedPassword: false });
+}
+
+/**
+ * Atualiza especificamente os identificadores de hardware (impressão digital) da câmera
+ */
+function updateCameraFingerprint(id, fingerprint = {}) {
+  const { mac_address, serial_number } = fingerprint;
+  const existing = getCameraById(id);
+  if (!existing) return null;
+
+  const newMac = mac_address ? String(mac_address).toLowerCase().trim() : existing.mac_address;
+  const newSerial = serial_number ? String(serial_number).trim() : existing.serial_number;
+
+  const stmt = db.prepare(`
+    UPDATE cameras SET
+      mac_address = ?,
+      serial_number = ?,
+      updated_at = datetime('now')
+    WHERE id = ?
+  `);
+  stmt.run(newMac, newSerial, Number(id));
+  return getCameraById(id);
+}
+
+/**
+ * Atualiza o endereço IP da câmera (usado no auto-healing de IP dinâmico)
+ */
+function updateCameraIp(id, newIp) {
+  if (!newIp) throw new Error('Novo endereço IP é obrigatório.');
+  const cleanIp = String(newIp).trim();
+  const stmt = db.prepare(`
+    UPDATE cameras SET
+      ip = ?,
+      updated_at = datetime('now')
+    WHERE id = ?
+  `);
+  stmt.run(cleanIp, Number(id));
+  return getCameraById(id);
+}
+
+/**
+ * Localiza uma câmera pelo MAC address ou Serial Number (para auto-healing)
+ */
+function findCameraByFingerprint({ mac_address, serial_number }) {
+  if (!mac_address && !serial_number) return null;
+
+  if (mac_address) {
+    const cleanMac = String(mac_address).toLowerCase().trim();
+    const stmt = db.prepare('SELECT * FROM cameras WHERE LOWER(mac_address) = ?');
+    const row = stmt.get(cleanMac);
+    if (row) return formatCameraRow(row, true);
+  }
+
+  if (serial_number) {
+    const cleanSerial = String(serial_number).trim();
+    const stmt = db.prepare('SELECT * FROM cameras WHERE serial_number = ?');
+    const row = stmt.get(cleanSerial);
+    if (row) return formatCameraRow(row, true);
+  }
+
+  return null;
 }
 
 /**
@@ -236,5 +317,8 @@ module.exports = {
   createCamera,
   updateCamera,
   deleteCamera,
+  updateCameraFingerprint,
+  updateCameraIp,
+  findCameraByFingerprint,
   migrateLegacyEnvIfEmpty
 };

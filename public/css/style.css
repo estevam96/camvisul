@@ -1206,3 +1206,75 @@ dialog::backdrop {
   align-items: center;
   gap: 6px;
 }
+
+/* ==========================================================================
+   Estilos de Descoberta de Câmeras (Discovery)
+   ========================================================================== */
+.discovery-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.discovered-cameras-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.discovered-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.discovered-item-card:hover {
+  border-color: var(--accent-blue);
+  background: rgba(14, 165, 233, 0.06);
+}
+
+.discovered-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.discovered-item-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.discovered-item-meta {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.badge-discovered-brand {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  background: rgba(14, 165, 233, 0.2);
+  color: var(--accent-blue);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}

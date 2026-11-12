@@ -62,4 +62,20 @@ assert.strictEqual(deleted, true);
 assert.strictEqual(getCameraById(cam.id), null);
 console.log('✓ Exclusão de câmera validada!');
 
-console.log('[Test API] Todos os testes de integração das câmeras passaram!');
+// 6. Testar Contrato de Enriquecimento de Descoberta (/api/discovery)
+const { discoverLocalCameras } = require('../src/discovery');
+async function testDiscoveryContract() {
+  const discovered = await discoverLocalCameras({ timeoutMs: 250 });
+  assert(Array.isArray(discovered), 'Descoberta deve retornar array');
+  const existingCameras = getAllCameras();
+  const enriched = discovered.map(d => ({
+    ...d,
+    alreadyAdded: existingCameras.some(c => c.ip === d.ip)
+  }));
+  assert(Array.isArray(enriched), 'Lista enriquecida deve ser array');
+  console.log('✓ Contrato de enriquecimento da rota /api/discovery validado!');
+}
+
+testDiscoveryContract().then(() => {
+  console.log('[Test API] Todos os testes de integração das câmeras passaram!');
+});

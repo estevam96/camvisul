@@ -7,6 +7,15 @@ const fs = require('fs');
 const { verifyRtspCredentials } = require('./rtsp-auth');
 const { getDeviceInformation, getStreamUri, ptzContinuousMove, ptzStop } = require('./onvif-client');
 const Go2rtcManager = require('./go2rtc-manager');
+const {
+  getAllCameras,
+  getCameraById,
+  createCamera,
+  updateCamera,
+  deleteCamera,
+  migrateLegacyEnvIfEmpty
+} = require('./db');
+const { CAMERA_PRESETS, getPreset } = require('./camera-presets');
 
 // Carregar variáveis de ambiente de .env se existir (sem dependência externa)
 const envFile = path.join(__dirname, '..', '.env');
@@ -86,6 +95,225 @@ try {
     }, 150);
   });
 } catch (e) {}
+
+/**
+ * Sincroniza todas as câmeras cadastradas no SQLite com o go2rtc
+ */
+async function syncAllCamerasWithGo2rtc() {
+  try {
+    if (!go2rtc.isReady) {
+      await go2rtc.start();
+    }
+    const cameras = getAllCameras({ includeDecryptedPassword: true });
+    for (const cam of cameras) {
+      try {
+        await go2rtc.registerCameraStreams(cam);
+      } catch (err) {
+        console.warn(`[go2rtc] Não foi possível registrar streams da câmera ${cam.id} (${cam.name}):`, err.message);
+      }
+    }
+    console.log(`[go2rtc] Sincronização concluída: ${cameras.length} câmera(s) no banco.`);
+  } catch (err) {
+    console.error('[go2rtc] Erro ao sincronizar câmeras:', err.message);
+  }
+}
+
+/* ==========================================================================
+   Rotas RESTful de Gerenciamento de Câmeras (VMS Multi-Câmeras)
+   ========================================================================== */
+
+/**
+ * Retorna os presets de marcas de câmeras disponíveis
+ */
+app.get('/api/presets', (req, res) => {
+  res.json({
+    success: true,
+    presets: Object.values(CAMERA_PRESETS).map((p) => ({
+      brand: p.brand,
+      label: p.label,
+      defaultRtspPort: p.defaultRtspPort,
+      defaultOnvifPort: p.defaultOnvifPort,
+      hasPtz: p.hasPtz
+    }))
+  });
+});
+
+/**
+ * Lista todas as câmeras cadastradas no banco SQLite
+ */
+app.get('/api/cameras', (req, res) => {
+  try {
+    const cameras = getAllCameras();
+    res.json({ success: true, cameras });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Retorna uma câmera específica
+ */
+app.get('/api/cameras/:id', (req, res) => {
+  try {
+    const cam = getCameraById(req.params.id);
+    if (!cam) {
+      return res.status(404).json({ success: false, error: 'Câmera não encontrada' });
+    }
+    res.json({ success: true, camera: cam });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Testa conectividade e autenticação RTSP antes de salvar
+ */
+app.post('/api/cameras/test', async (req, res) => {
+  try {
+    const { id, ip, rtsp_port = 554, username = 'admin', password = '' } = req.body;
+    if (!ip) {
+      return res.status(400).json({ success: false, error: 'Endereço IP é obrigatório.' });
+    }
+
+    let effectivePassword = password;
+    if (!effectivePassword && id) {
+      const existing = getCameraById(id, { includeDecryptedPassword: true });
+      if (existing && existing.password) {
+        effectivePassword = existing.password;
+      }
+    }
+
+    const authResult = await verifyRtspCredentials(ip, Number(rtsp_port), username, effectivePassword);
+    if (!authResult.success) {
+      return res.status(401).json({ success: false, error: authResult.error || 'Falha na autenticação RTSP' });
+    }
+
+    res.json({ success: true, message: 'Conexão e autenticação RTSP validadas com sucesso!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Cadastra uma nova câmera no SQLite e registra seus streams no go2rtc
+ */
+app.post('/api/cameras', async (req, res) => {
+  try {
+    const {
+      name,
+      brand = 'generic',
+      ip,
+      rtsp_port = 554,
+      onvif_port,
+      username = 'admin',
+      password = '',
+      channel = 0,
+      main_stream_uri = '',
+      sub_stream_uri = '',
+      has_ptz = 1
+    } = req.body;
+
+    if (!name || !ip) {
+      return res.status(400).json({ success: false, error: 'Nome e IP são obrigatórios.' });
+    }
+
+    const newCam = createCamera({
+      name,
+      brand,
+      ip,
+      rtsp_port,
+      onvif_port,
+      username,
+      password,
+      channel,
+      main_stream_uri,
+      sub_stream_uri,
+      has_ptz
+    });
+
+    // Registra imediatamente no go2rtc
+    try {
+      if (!go2rtc.isReady) await go2rtc.start();
+      const camWithPass = getCameraById(newCam.id, { includeDecryptedPassword: true });
+      await go2rtc.registerCameraStreams(camWithPass);
+    } catch (regErr) {
+      console.warn(`[API] Câmera salva, aviso ao registrar streams: ${regErr.message}`);
+    }
+
+    res.status(201).json({ success: true, camera: newCam });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Atualiza os dados de uma câmera existente
+ */
+app.put('/api/cameras/:id', async (req, res) => {
+  try {
+    const updated = updateCamera(req.params.id, req.body);
+
+    try {
+      if (!go2rtc.isReady) await go2rtc.start();
+      const camWithPass = getCameraById(updated.id, { includeDecryptedPassword: true });
+      await go2rtc.registerCameraStreams(camWithPass);
+    } catch (regErr) {
+      console.warn(`[API] Câmera atualizada, aviso no go2rtc: ${regErr.message}`);
+    }
+
+    res.json({ success: true, camera: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Remove uma câmera do SQLite e desregistra seus streams do go2rtc
+ */
+app.delete('/api/cameras/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    await go2rtc.unregisterCameraStreams(id);
+    const deleted = deleteCamera(id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, error: 'Câmera não encontrada' });
+    }
+    res.json({ success: true, message: 'Câmera removida com sucesso' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Envia comandos de movimentação PTZ para uma câmera específica
+ */
+app.post('/api/cameras/:id/ptz', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const cam = getCameraById(id, { includeDecryptedPassword: true });
+    if (!cam) {
+      return res.status(404).json({ success: false, error: 'Câmera não encontrada' });
+    }
+
+    if (!cam.has_ptz) {
+      return res.status(400).json({ success: false, error: 'Esta câmera não possui motor/suporte a PTZ' });
+    }
+
+    const { action = 'stop', pan = 0, tilt = 0, zoom = 0 } = req.body;
+    const onvifPort = cam.onvif_port || (cam.brand === 'besder' ? 8899 : 80);
+
+    if (action === 'move') {
+      await ptzContinuousMove(cam.ip, onvifPort, Number(pan), Number(tilt), Number(zoom), 'PROFILE_000', cam.username, cam.password);
+      return res.json({ success: true, action: 'move', cameraId: id });
+    } else {
+      await ptzStop(cam.ip, onvifPort, 'PROFILE_000', cam.username, cam.password);
+      return res.json({ success: true, action: 'stop', cameraId: id });
+    }
+  } catch (error) {
+    console.error(`[API PTZ Câmera ${req.params.id}] Erro:`, error.message);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 /**
  * Rota de conexão e autenticação
@@ -231,7 +459,11 @@ app.post('/api/webrtc', async (req, res) => {
       return res.status(400).send('Oferta SDP ausente no corpo da requisição');
     }
 
-    if (!currentSession.connected) {
+    if (!go2rtc.isReady) {
+      await go2rtc.start();
+    }
+
+    if (!req.query.src && !currentSession.connected) {
       return res.status(401).send('Câmera não conectada. Conecte-se primeiro via /api/connect');
     }
 
@@ -420,6 +652,17 @@ function listenWithPortFallback(app, initialPort, maxAttempts = 50) {
 async function startServer() {
   try {
     await go2rtc.start();
+
+    // Auto-migra credenciais legadas se o banco de dados estiver vazio
+    try {
+      migrateLegacyEnvIfEmpty();
+    } catch (e) {
+      console.warn('[DB] Aviso na migração inicial:', e.message);
+    }
+
+    // Sincroniza câmeras do banco com go2rtc
+    await syncAllCamerasWithGo2rtc();
+
     const { server, port: actualPort } = await listenWithPortFallback(app, INITIAL_PORT);
 
     // Registra a porta ativa em .port para scripts auxiliares (ex: start.sh)

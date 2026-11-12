@@ -2,6 +2,7 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
+const { resolveCameraSources } = require('./camera-presets');
 
 class Go2rtcManager {
   constructor(options = {}) {
@@ -133,6 +134,77 @@ class Go2rtcManager {
       });
       req.end();
     });
+  }
+
+  /**
+   * Remove/desregistra um stream no go2rtc
+   * @param {string} name - Nome do stream a ser removido
+   */
+  async unregisterStream(name) {
+    return new Promise((resolve) => {
+      const encoded = encodeURIComponent(name);
+      const options = {
+        hostname: this.apiHost,
+        port: this.apiPort,
+        path: `/api/streams?src=${encoded}`,
+        method: 'DELETE',
+        timeout: 3000
+      };
+      const req = http.request(options, (res) => {
+        resolve(res.statusCode >= 200 && res.statusCode < 300);
+      });
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(false);
+      });
+      req.end();
+    });
+  }
+
+  /**
+   * Registra dinamicamente os streams principal (main) e secundário (sub) de uma câmera
+   * @param {object} camera - Objeto da câmera com credenciais e parâmetros
+   * @param {object} onvifUris - URIs dinâmicas ONVIF (opcional)
+   */
+  async registerCameraStreams(camera, onvifUris = {}) {
+    const sources = resolveCameraSources(camera, onvifUris);
+    const mainStreamName = `cam_${camera.id}_main`;
+    const subStreamName = `cam_${camera.id}_sub`;
+
+    await Promise.all([
+      this.registerStream(mainStreamName, sources.main),
+      this.registerStream(subStreamName, sources.sub)
+    ]);
+
+    // Compatibilidade com câmera única principal
+    if (camera.id === 1) {
+      await Promise.allSettled([
+        this.registerStream('besder_main', sources.main),
+        this.registerStream('besder_sub', sources.sub)
+      ]);
+    }
+
+    return {
+      mainStreamName,
+      subStreamName
+    };
+  }
+
+  /**
+   * Remove os streams principal e secundário de uma câmera do go2rtc
+   * @param {number|string} cameraId - ID da câmera
+   */
+  async unregisterCameraStreams(cameraId) {
+    const mainStreamName = `cam_${cameraId}_main`;
+    const subStreamName = `cam_${cameraId}_sub`;
+
+    await Promise.allSettled([
+      this.unregisterStream(mainStreamName),
+      this.unregisterStream(subStreamName)
+    ]);
+
+    return true;
   }
 
   /**

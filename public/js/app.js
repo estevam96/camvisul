@@ -20,7 +20,17 @@
     btnOpenSettings: document.getElementById('btn-open-settings'),
     btnDisconnect: document.getElementById('btn-disconnect'),
 
-    // Viewport de Vídeo
+    // Layout e Grid VMS
+    btnLayout1x1: document.getElementById('btn-layout-1x1'),
+    btnLayout2x2: document.getElementById('btn-layout-2x2'),
+    btnLayout3x3: document.getElementById('btn-layout-3x3'),
+    vmsGridViewport: document.getElementById('vms-grid-viewport'),
+    btnAddCamera: document.getElementById('btn-add-camera'),
+    cameraItemsList: document.getElementById('camera-items-list'),
+    badgeTotalCameras: document.getElementById('badge-total-cameras'),
+    ptzActiveTargetLabel: document.getElementById('ptz-active-target-label'),
+
+    // Viewport de Vídeo (Foco 1x1)
     videoCardContainer: document.getElementById('video-card-container'),
     videoPlayer: document.getElementById('video-player'),
     videoLoadingState: document.getElementById('video-loading-state'),
@@ -72,7 +82,43 @@
     formFeedback: document.getElementById('form-feedback'),
     btnSubmitLogin: document.getElementById('btn-submit-login'),
     btnSpinner: document.getElementById('btn-spinner'),
-    btnSubmitText: document.getElementById('btn-submit-text')
+    btnSubmitText: document.getElementById('btn-submit-text'),
+
+    // Modal de Cadastro/Edição de Câmeras
+    cameraDialog: document.getElementById('camera-dialog'),
+    camDialogTitle: document.getElementById('cam-dialog-title'),
+    cameraForm: document.getElementById('camera-form'),
+    camDialogCloseBtn: document.getElementById('cam-dialog-close-btn'),
+    camInputId: document.getElementById('cam-input-id'),
+    camInputName: document.getElementById('cam-input-name'),
+    camSelectBrand: document.getElementById('cam-select-brand'),
+    camInputIp: document.getElementById('cam-input-ip'),
+    camInputRtspPort: document.getElementById('cam-input-rtsp-port'),
+    camInputOnvifPort: document.getElementById('cam-input-onvif-port'),
+    camInputUser: document.getElementById('cam-input-user'),
+    camInputPass: document.getElementById('cam-input-pass'),
+    btnToggleCamPass: document.getElementById('btn-toggle-cam-pass'),
+    camIconEyeShow: document.getElementById('cam-icon-eye-show'),
+    camIconEyeHide: document.getElementById('cam-icon-eye-hide'),
+    camPassHint: document.getElementById('cam-pass-hint'),
+    camCheckboxPtz: document.getElementById('cam-checkbox-ptz'),
+    camFormFeedback: document.getElementById('cam-form-feedback'),
+    btnTestCamera: document.getElementById('btn-test-camera'),
+    btnTestSpinner: document.getElementById('btn-test-spinner'),
+    btnTestText: document.getElementById('btn-test-text'),
+    btnSaveCamera: document.getElementById('btn-save-camera'),
+    btnSaveSpinner: document.getElementById('btn-save-spinner'),
+    btnSaveText: document.getElementById('btn-save-text')
+  };
+
+  // Preset default ports
+  const BRAND_PRESET_PORTS = {
+    besder: { rtsp: 554, onvif: 8899, ptz: true },
+    intelbras: { rtsp: 554, onvif: 80, ptz: true },
+    dahua: { rtsp: 554, onvif: 80, ptz: true },
+    hikvision: { rtsp: 554, onvif: 8000, ptz: true },
+    tapo: { rtsp: 554, onvif: 2020, ptz: true },
+    generic: { rtsp: 554, onvif: 80, ptz: false }
   };
 
   // Instância do medidor de áudio
@@ -81,7 +127,7 @@
   // Estado da Aplicação
   const state = {
     connected: false,
-    activeStream: 'besder_main', // 'besder_main' ou 'besder_sub'
+    activeStream: 'besder_main', // 'besder_main', 'besder_sub' ou 'cam_X_main'
     peerConnection: null,
     currentMediaStream: null,
     isMuted: true,
@@ -89,7 +135,15 @@
     snapshots: [],
     ptzMoving: false,
     latencyStartTime: 0,
-    retryCount: 0
+    retryCount: 0,
+
+    // Estado Multi-Câmeras VMS
+    cameras: [],
+    currentLayout: '1x1', // '1x1', '2x2', '3x3'
+    selectedCameraId: null,
+    gridPeerConnections: new Map(), // cameraId -> RTCPeerConnection
+    gridMediaStreams: new Map(),
+    activeAudioCameraId: null
   };
 
   /* ==========================================================================
@@ -105,15 +159,15 @@
   }
 
   /* ==========================================================================
-     2. Gerenciamento do Modal de Login & Credenciais
+     2. Gerenciamento do Modal de Configuração & Credenciais
      ========================================================================== */
   function openLoginModal() {
-    elements.formFeedback.className = 'form-feedback hidden';
-    elements.loginDialog.showModal();
+    const cam = state.cameras.find((c) => c.id === state.selectedCameraId) || state.cameras[0] || null;
+    openCameraModal(cam);
   }
 
   function closeLoginModal() {
-    elements.loginDialog.close();
+    closeCameraModal();
   }
 
   function getSavedCredentials() {
@@ -170,9 +224,14 @@
       await startWebRtcStream(state.activeStream);
 
       // Atualiza badges
-      elements.statusDot.style.backgroundColor = 'var(--accent-green)';
-      elements.badgeConnStatus.textContent = 'Online';
-      elements.badgeConnStatus.className = 'badge badge-success';
+      if (elements.statusDot) elements.statusDot.style.backgroundColor = 'var(--accent-green)';
+      if (elements.badgeConnStatus) {
+        elements.badgeConnStatus.textContent = 'Online';
+        elements.badgeConnStatus.className = 'badge badge-success';
+      }
+
+      // Sincroniza a lista de câmeras no VMS
+      await loadCameras();
 
     } catch (error) {
       console.error('[App] Erro na conexão:', error);
@@ -184,11 +243,11 @@
 
   function updateCameraDiagnostics(cam) {
     if (!cam) return;
-    elements.camModel.textContent = cam.model || 'Besder XM530';
-    elements.camIp.textContent = `${cam.ip}:${cam.port}`;
-    elements.diagIp.textContent = `${cam.ip}:${cam.port}`;
-    elements.diagModel.textContent = `${cam.manufacturer} (${cam.model})`;
-    elements.diagFw.textContent = cam.firmware || 'V5.00';
+    if (elements.camModel) elements.camModel.textContent = cam.model || 'Besder XM530';
+    if (elements.camIp) elements.camIp.textContent = `${cam.ip}:${cam.port}`;
+    if (elements.diagIp) elements.diagIp.textContent = `${cam.ip}:${cam.port}`;
+    if (elements.diagModel) elements.diagModel.textContent = `${cam.manufacturer} (${cam.model})`;
+    if (elements.diagFw) elements.diagFw.textContent = cam.firmware || 'V5.00';
     updateQualityUi();
   }
 
@@ -296,6 +355,8 @@
     }
   }
 
+  let reconnectTimeoutId = null;
+
   /* ==========================================================================
      Watchdog Anti-Congelamento (Anti-Freeze Watchdog)
      ========================================================================== */
@@ -304,7 +365,8 @@
     let staleCount = 0;
 
     setInterval(() => {
-      if (!state.connected || !elements.videoPlayer) return;
+      // O watchdog monitora estritamente o player no modo Foco 1x1
+      if (state.currentLayout !== '1x1' || !state.connected || !elements.videoPlayer) return;
       if (elements.videoPlayer.paused) {
         if (!state.userPaused) {
           elements.videoPlayer.play().catch(() => {});
@@ -328,31 +390,48 @@
   }
 
   function handleConnectionDrop(streamName) {
+    // NUNCA disparar reconexão do stream principal se o usuário estiver navegando em grade (2x2 ou 3x3)
+    if (state.currentLayout !== '1x1' || !state.connected) return;
+
     state.retryCount++;
     if (state.retryCount <= 3) {
       setLoadingState(true, `Reconectando à câmera (tentativa ${state.retryCount}/3)...`);
-      setTimeout(() => {
-        if (state.connected) startWebRtcStream(streamName);
+      if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
+      reconnectTimeoutId = setTimeout(() => {
+        if (state.connected && state.currentLayout === '1x1') {
+          startWebRtcStream(streamName);
+        }
       }, 2500);
     } else {
-      setLoadingState(true, 'Conexão instável. Clique em Conexão para reiniciar.');
+      setLoadingState(true, 'Conexão instável. Clique em Configuração para reiniciar.');
     }
   }
 
   function stopWebRtcStream() {
+    if (reconnectTimeoutId) {
+      clearTimeout(reconnectTimeoutId);
+      reconnectTimeoutId = null;
+    }
     audioMeter.stop();
     if (state.peerConnection) {
+      state.peerConnection.onconnectionstatechange = null;
+      state.peerConnection.oniceconnectionstatechange = null;
+      state.peerConnection.ontrack = null;
       try {
         state.peerConnection.close();
       } catch (e) {}
       state.peerConnection = null;
     }
-    if (elements.videoPlayer.srcObject) {
-      elements.videoPlayer.srcObject = null;
-    }
-    if (elements.videoPlayer.src) {
-      elements.videoPlayer.removeAttribute('src');
-      elements.videoPlayer.load();
+    if (elements.videoPlayer) {
+      elements.videoPlayer.onpause = null;
+      elements.videoPlayer.onstalled = null;
+      if (elements.videoPlayer.srcObject) {
+        elements.videoPlayer.srcObject = null;
+      }
+      if (elements.videoPlayer.src) {
+        elements.videoPlayer.removeAttribute('src');
+        elements.videoPlayer.load();
+      }
     }
   }
 
@@ -428,10 +507,12 @@
      7. Controle PTZ (Pan / Tilt / Zoom)
      ========================================================================== */
   async function sendPtzCommand(action, pan = 0, tilt = 0, zoom = 0) {
-    if (!state.connected) return;
-
     try {
-      await fetch('/api/ptz', {
+      const url = state.selectedCameraId
+        ? `/api/cameras/${state.selectedCameraId}/ptz`
+        : '/api/ptz';
+
+      await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, pan, tilt, zoom })
@@ -600,58 +681,594 @@
     elements.formFeedback.classList.remove('hidden');
   }
 
+  function showCamFormFeedback(msg, type = 'error') {
+    elements.camFormFeedback.textContent = msg;
+    elements.camFormFeedback.className = `form-feedback ${type}`;
+    elements.camFormFeedback.classList.remove('hidden');
+  }
+
+  /* ==========================================================================
+     VMS Multi-Câmeras: Gerenciamento, Layouts e Streams em Grid
+     ========================================================================== */
+
+  /**
+   * Carrega a lista de câmeras do backend e inicializa visualização
+   */
+  async function loadCameras() {
+    try {
+      const res = await fetch('/api/cameras');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.success) return;
+
+      state.cameras = data.cameras || [];
+      if (elements.badgeTotalCameras) {
+        elements.badgeTotalCameras.textContent = `${state.cameras.length} câmera${state.cameras.length !== 1 ? 's' : ''}`;
+      }
+
+      // Se nenhuma câmera estiver selecionada, seleciona a primeira
+      if (!state.selectedCameraId && state.cameras.length > 0) {
+        selectCamera(state.cameras[0].id);
+      }
+
+      renderCameraList();
+
+      if (state.currentLayout !== '1x1') {
+        renderGrid();
+      } else if (!state.peerConnection && state.selectedCameraId) {
+        playSelectedCameraInFocus();
+      }
+    } catch (e) {
+      console.warn('[VMS] Erro ao carregar câmeras:', e);
+    }
+  }
+
+  /**
+   * Renderiza a lista de câmeras no painel inferior
+   */
+  function renderCameraList() {
+    if (!elements.cameraItemsList) return;
+    elements.cameraItemsList.innerHTML = '';
+
+    if (state.cameras.length === 0) {
+      elements.cameraItemsList.innerHTML = `
+        <div style="padding: 12px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+          Nenhuma câmera cadastrada ainda.<br>Clique em <strong>Nova Câmera</strong> acima para adicionar.
+        </div>
+      `;
+      return;
+    }
+
+    state.cameras.forEach((cam) => {
+      const card = document.createElement('div');
+      card.className = `camera-item-card ${cam.id === state.selectedCameraId ? 'selected' : ''}`;
+      card.dataset.id = cam.id;
+
+      card.innerHTML = `
+        <div class="cam-item-left">
+          <span class="status-pulse-dot" style="width: 8px; height: 8px; background: var(--accent-green);"></span>
+          <div>
+            <div class="cam-item-name">${escapeHtml(cam.name)}</div>
+            <div class="cam-item-ip">${escapeHtml(cam.ip)}:${cam.rtsp_port} • <span style="text-transform: uppercase;">${escapeHtml(cam.brand)}</span></div>
+          </div>
+        </div>
+        <div class="cam-item-actions">
+          <button type="button" class="btn btn-secondary btn-sm btn-select-cam" title="Focar nesta câmera">Ver</button>
+          <button type="button" class="btn btn-secondary btn-sm btn-edit-cam" title="Editar configurações">Editar</button>
+          <button type="button" class="btn btn-outline-danger btn-sm btn-del-cam" title="Excluir câmera">Excluir</button>
+        </div>
+      `;
+
+      card.querySelector('.btn-select-cam').addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectCamera(cam.id);
+        if (state.currentLayout === '1x1') {
+          playSelectedCameraInFocus();
+        } else {
+          setLayout('1x1');
+        }
+      });
+
+      card.querySelector('.btn-edit-cam').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openCameraModal(cam);
+      });
+
+      card.querySelector('.btn-del-cam').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (confirm(`Deseja realmente excluir a câmera "${cam.name}"?`)) {
+          await deleteCameraById(cam.id);
+        }
+      });
+
+      card.addEventListener('click', () => {
+        selectCamera(cam.id);
+      });
+
+      elements.cameraItemsList.appendChild(card);
+    });
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /**
+   * Define a câmera ativa para controle de foco e PTZ
+   */
+  function selectCamera(cameraId) {
+    state.selectedCameraId = Number(cameraId);
+    const cam = state.cameras.find((c) => c.id === state.selectedCameraId);
+
+    // Atualiza label PTZ
+    if (elements.ptzActiveTargetLabel) {
+      elements.ptzActiveTargetLabel.textContent = cam
+        ? `Alvo PTZ: ${cam.name} (${cam.ip})`
+        : 'Câmera Ativa: Nenhuma';
+    }
+
+    if (cam) {
+      elements.camModel.textContent = cam.name;
+      elements.camIp.textContent = `${cam.ip}:${cam.rtsp_port}`;
+      if (elements.diagIp) elements.diagIp.textContent = `${cam.ip}:${cam.rtsp_port}`;
+      if (elements.diagModel) elements.diagModel.textContent = `${cam.brand.toUpperCase()} - ${cam.name}`;
+    }
+
+    // Atualiza classes ativas na lista
+    if (elements.cameraItemsList) {
+      elements.cameraItemsList.querySelectorAll('.camera-item-card').forEach((el) => {
+        el.classList.toggle('selected', Number(el.dataset.id) === state.selectedCameraId);
+      });
+    }
+
+    // Atualiza borda azul no grid
+    if (elements.vmsGridViewport) {
+      elements.vmsGridViewport.querySelectorAll('.vms-grid-cell').forEach((el) => {
+        el.classList.toggle('active-camera', Number(el.dataset.cameraId) === state.selectedCameraId);
+      });
+    }
+  }
+
+  /**
+   * Alterna o layout de visualização (1x1, 2x2, 3x3)
+   */
+  function setLayout(layout) {
+    state.currentLayout = layout;
+
+    // Atualiza botões do header
+    elements.btnLayout1x1.classList.toggle('active', layout === '1x1');
+    elements.btnLayout2x2.classList.toggle('active', layout === '2x2');
+    elements.btnLayout3x3.classList.toggle('active', layout === '3x3');
+
+    if (layout === '1x1') {
+      stopGridStreams();
+      elements.vmsGridViewport.classList.add('hidden');
+      elements.videoCardContainer.classList.remove('hidden');
+      playSelectedCameraInFocus();
+    } else {
+      stopWebRtcStream();
+      elements.videoCardContainer.classList.add('hidden');
+      elements.vmsGridViewport.classList.remove('hidden');
+      elements.vmsGridViewport.className = `vms-grid-viewport layout-${layout}`;
+      renderGrid();
+    }
+  }
+
+  /**
+   * Inicia o player principal em alta definição (HD) da câmera selecionada
+   */
+  function playSelectedCameraInFocus() {
+    const cam = state.cameras.find((c) => c.id === state.selectedCameraId) || state.cameras[0];
+    if (!cam) return;
+
+    state.connected = true;
+    const streamName = `cam_${cam.id}_main`;
+    state.activeStream = streamName;
+    updateQualityUi();
+    startWebRtcStream(streamName);
+  }
+
+  /**
+   * Encerra todas as conexões WebRTC ativas no grid
+   */
+  function stopGridStreams() {
+    state.gridPeerConnections.forEach((pc) => {
+      try {
+        pc.onconnectionstatechange = null;
+        pc.oniceconnectionstatechange = null;
+        pc.ontrack = null;
+        pc.close();
+      } catch (e) {}
+    });
+    state.gridPeerConnections.clear();
+    state.gridMediaStreams.clear();
+    state.activeAudioCameraId = null;
+  }
+
+  /**
+   * Renderiza as células do Grid e estabelece streams WebRTC leves (Substream SD)
+   */
+  function renderGrid() {
+    stopGridStreams();
+    if (!elements.vmsGridViewport) return;
+    elements.vmsGridViewport.innerHTML = '';
+
+    const capacity = state.currentLayout === '3x3' ? 9 : 4;
+    const visibleCams = state.cameras.slice(0, capacity);
+
+    visibleCams.forEach((cam) => {
+      const cell = document.createElement('div');
+      cell.className = `vms-grid-cell ${cam.id === state.selectedCameraId ? 'active-camera' : ''}`;
+      cell.dataset.cameraId = cam.id;
+
+      const video = document.createElement('video');
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = true; // No grid, inicia mudo por padrão
+
+      const topBar = document.createElement('div');
+      topBar.className = 'cell-top-bar';
+      topBar.innerHTML = `
+        <div class="cell-info-badge">
+          <span class="status-pulse-dot" style="width: 7px; height: 7px; background: var(--accent-green);"></span>
+          <span style="font-weight: 600;">${escapeHtml(cam.name)}</span>
+          <span class="cell-brand-tag">${escapeHtml(cam.brand)}</span>
+          <span style="font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono);">SD</span>
+        </div>
+        <div class="cell-actions">
+          <button type="button" class="cell-action-btn cell-audio-btn" title="Ativar Áudio desta Câmera">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+          </button>
+          <button type="button" class="cell-action-btn cell-snap-btn" title="Capturar Foto">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+          </button>
+          <button type="button" class="cell-action-btn cell-max-btn" title="Focar em 1x1 (HD)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+          </button>
+        </div>
+      `;
+
+      cell.appendChild(video);
+      cell.appendChild(topBar);
+
+      // Botão de Áudio Exclusivo
+      const audioBtn = topBar.querySelector('.cell-audio-btn');
+      audioBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleGridAudio(cam.id, video, audioBtn);
+      });
+
+      // Botão de Snapshot da Célula
+      const snapBtn = topBar.querySelector('.cell-snap-btn');
+      snapBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        captureCellFrame(video, cam.name);
+      });
+
+      // Botão de Maximizar para Foco 1x1
+      const maxBtn = topBar.querySelector('.cell-max-btn');
+      maxBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectCamera(cam.id);
+        setLayout('1x1');
+      });
+
+      // Clique simples: Seleciona câmera
+      cell.addEventListener('click', () => {
+        selectCamera(cam.id);
+      });
+
+      // Duplo clique: Abre modo Foco 1x1
+      cell.addEventListener('dblclick', () => {
+        selectCamera(cam.id);
+        setLayout('1x1');
+      });
+
+      elements.vmsGridViewport.appendChild(cell);
+
+      // Inicia stream WebRTC de Substream (SD) para esta célula
+      connectGridCellWebRtc(cam.id, video);
+    });
+
+    // Se houver vagas no grid, renderiza cartão para adicionar
+    if (visibleCams.length < capacity) {
+      const emptySlot = document.createElement('div');
+      emptySlot.className = 'vms-empty-cell';
+      emptySlot.innerHTML = `
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="16"></line>
+          <line x1="8" y1="12" x2="16" y2="12"></line>
+        </svg>
+        <span style="font-weight: 600; font-size: 0.9rem;">+ Adicionar Câmera</span>
+      `;
+      emptySlot.addEventListener('click', () => openCameraModal());
+      elements.vmsGridViewport.appendChild(emptySlot);
+    }
+  }
+
+  /**
+   * Conecta o vídeo de uma célula ao Substream (SD) correspondente no go2rtc
+   */
+  async function connectGridCellWebRtc(cameraId, videoElement) {
+    try {
+      const streamName = `cam_${cameraId}_sub`;
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      state.gridPeerConnections.set(cameraId, pc);
+
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+
+      let cellStream = null;
+      pc.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+          cellStream = event.streams[0];
+        } else {
+          if (!cellStream) {
+            cellStream = new MediaStream();
+          }
+          cellStream.addTrack(event.track);
+        }
+        state.gridMediaStreams.set(cameraId, cellStream);
+        if (videoElement.srcObject !== cellStream) {
+          videoElement.srcObject = cellStream;
+        }
+        videoElement.play().catch(() => {});
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log(`[VMS Grid Câm ${cameraId}] Conexão:`, pc.connectionState);
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const res = await fetch(`/api/webrtc?src=${encodeURIComponent(streamName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription.sdp
+      });
+
+      if (res.ok) {
+        const answer = await res.text();
+        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answer }));
+      }
+    } catch (e) {
+      console.warn(`[VMS Grid] Falha ao conectar câmera ${cameraId}:`, e.message);
+    }
+  }
+
+  /**
+   * Alterna áudio exclusivo em uma câmera do grid
+   */
+  function toggleGridAudio(cameraId, videoElement, audioBtn) {
+    if (state.activeAudioCameraId === cameraId) {
+      // Já estava ativa -> silencia
+      videoElement.muted = true;
+      state.activeAudioCameraId = null;
+      audioBtn.classList.remove('active');
+    } else {
+      // Silencia todos os outros vídeos do grid
+      if (elements.vmsGridViewport) {
+        elements.vmsGridViewport.querySelectorAll('video').forEach((v) => { v.muted = true; });
+        elements.vmsGridViewport.querySelectorAll('.cell-audio-btn').forEach((btn) => { btn.classList.remove('active'); });
+      }
+
+      // Ativa áudio desta câmera
+      videoElement.muted = false;
+      videoElement.volume = state.volume;
+      state.activeAudioCameraId = cameraId;
+      audioBtn.classList.add('active');
+      selectCamera(cameraId);
+    }
+  }
+
+  /**
+   * Captura foto de um elemento de vídeo específico do grid
+   */
+  function captureCellFrame(videoElement, cameraName) {
+    if (!videoElement.videoWidth || !videoElement.videoHeight) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = videoElement.videoWidth;
+    canvas.height = videoElement.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const filename = `${cameraName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}.jpg`;
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+
+      addSnapshotToGallery(url, filename);
+    }, 'image/jpeg', 0.95);
+  }
+
+  /**
+   * Modal de Cadastro / Edição de Câmera
+   */
+  function openCameraModal(camToEdit = null) {
+    elements.camFormFeedback.classList.add('hidden');
+    elements.cameraForm.reset();
+
+    if (camToEdit) {
+      elements.camDialogTitle.textContent = 'Editar Câmera';
+      elements.camInputId.value = camToEdit.id;
+      elements.camInputName.value = camToEdit.name;
+      elements.camSelectBrand.value = camToEdit.brand || 'generic';
+      elements.camInputIp.value = camToEdit.ip;
+      elements.camInputRtspPort.value = camToEdit.rtsp_port || 554;
+      elements.camInputOnvifPort.value = camToEdit.onvif_port || '';
+      elements.camInputUser.value = camToEdit.username || 'admin';
+      elements.camInputPass.value = '';
+      elements.camPassHint.textContent = 'Deixe em branco para manter a senha cadastrada.';
+      elements.camCheckboxPtz.checked = Boolean(camToEdit.has_ptz);
+      elements.btnSaveText.textContent = 'Salvar Alterações';
+    } else {
+      elements.camDialogTitle.textContent = 'Cadastrar Nova Câmera';
+      elements.camInputId.value = '';
+      elements.camSelectBrand.value = 'besder';
+      elements.camInputRtspPort.value = 554;
+      elements.camInputOnvifPort.value = 8899;
+      elements.camInputUser.value = 'admin';
+      elements.camPassHint.textContent = 'Armazenada de forma segura com criptografia AES-256-GCM.';
+      elements.camCheckboxPtz.checked = true;
+      elements.btnSaveText.textContent = 'Cadastrar Câmera';
+    }
+
+    elements.cameraDialog.showModal();
+  }
+
+  function closeCameraModal() {
+    elements.cameraDialog.close();
+  }
+
+  /**
+   * Preenchimento automático de portas por fabricante
+   */
+  function applyBrandPresetPorts(brand) {
+    const preset = BRAND_PRESET_PORTS[brand] || BRAND_PRESET_PORTS.generic;
+    elements.camInputRtspPort.value = preset.rtsp;
+    elements.camInputOnvifPort.value = preset.onvif || '';
+    elements.camCheckboxPtz.checked = preset.ptz;
+  }
+
+  /**
+   * Teste de conexão RTSP no formulário
+   */
+  async function testCameraConnection() {
+    const id = elements.camInputId.value ? parseInt(elements.camInputId.value, 10) : null;
+    const ip = elements.camInputIp.value.trim();
+    const rtsp_port = parseInt(elements.camInputRtspPort.value.trim(), 10) || 554;
+    const username = elements.camInputUser.value.trim();
+    const password = elements.camInputPass.value;
+
+    if (!ip) {
+      showCamFormFeedback('Informe o endereço IP da câmera para testar.', 'error');
+      return;
+    }
+
+    elements.btnTestSpinner.classList.remove('hidden');
+    elements.btnTestText.textContent = 'Testando...';
+    elements.btnTestCamera.disabled = true;
+
+    try {
+      const res = await fetch('/api/cameras/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ip, rtsp_port, username, password })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showCamFormFeedback('✓ Conexão RTSP e credenciais validadas com sucesso!', 'success');
+      } else {
+        showCamFormFeedback(`Falha: ${data.error || 'Não foi possível conectar'}`, 'error');
+      }
+    } catch (e) {
+      showCamFormFeedback(`Erro de rede ao testar: ${e.message}`, 'error');
+    } finally {
+      elements.btnTestSpinner.classList.add('hidden');
+      elements.btnTestText.textContent = 'Testar Conexão';
+      elements.btnTestCamera.disabled = false;
+    }
+  }
+
+  /**
+   * Exclusão de câmera
+   */
+  async function deleteCameraById(id) {
+    try {
+      const res = await fetch(`/api/cameras/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (state.selectedCameraId === Number(id)) {
+          state.selectedCameraId = null;
+        }
+        await loadCameras();
+      }
+    } catch (e) {
+      alert(`Falha ao excluir câmera: ${e.message}`);
+    }
+  }
+
   /* ==========================================================================
      10. Inicialização de Eventos
      ========================================================================== */
   function setupEventListeners() {
-    elements.btnOpenSettings.addEventListener('click', openLoginModal);
-    elements.dialogCloseBtn.addEventListener('click', closeLoginModal);
-
-    elements.btnTogglePass.addEventListener('click', () => {
-      const isPass = elements.inputPass.type === 'password';
-      elements.inputPass.type = isPass ? 'text' : 'password';
-      elements.iconEyeShow.classList.toggle('hidden', isPass);
-      elements.iconEyeHide.classList.toggle('hidden', !isPass);
+    elements.btnOpenSettings.addEventListener('click', () => {
+      const cam = state.cameras.find((c) => c.id === state.selectedCameraId) || state.cameras[0] || null;
+      openCameraModal(cam);
     });
 
-    elements.loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
+    if (elements.dialogCloseBtn) {
+      elements.dialogCloseBtn.addEventListener('click', closeLoginModal);
+    }
 
-      elements.btnSubmitLogin.disabled = true;
-      elements.btnSpinner.classList.remove('hidden');
-      elements.btnSubmitText.textContent = 'Autenticando...';
-      elements.formFeedback.classList.add('hidden');
+    if (elements.btnTogglePass && elements.inputPass) {
+      elements.btnTogglePass.addEventListener('click', () => {
+        const isPass = elements.inputPass.type === 'password';
+        elements.inputPass.type = isPass ? 'text' : 'password';
+        if (elements.iconEyeShow) elements.iconEyeShow.classList.toggle('hidden', isPass);
+        if (elements.iconEyeHide) elements.iconEyeHide.classList.toggle('hidden', !isPass);
+      });
+    }
 
-      const creds = {
-        ip: elements.inputIp.value.trim(),
-        port: parseInt(elements.inputPort.value.trim(), 10),
-        user: elements.inputUser.value.trim(),
-        password: elements.inputPass.value,
-        quality: elements.selectQuality.value
-      };
+    if (elements.loginForm) {
+      elements.loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
 
-      if (elements.checkboxRemember.checked) {
-        saveCredentials(creds);
-      } else {
-        clearCredentials();
-      }
+        if (elements.btnSubmitLogin) {
+          elements.btnSubmitLogin.disabled = true;
+          if (elements.btnSpinner) elements.btnSpinner.classList.remove('hidden');
+          if (elements.btnSubmitText) elements.btnSubmitText.textContent = 'Autenticando...';
+        }
+        if (elements.formFeedback) elements.formFeedback.classList.add('hidden');
 
-      await connectCamera(creds);
+        const creds = {
+          ip: elements.inputIp ? elements.inputIp.value.trim() : '',
+          port: elements.inputPort ? parseInt(elements.inputPort.value.trim(), 10) : 554,
+          user: elements.inputUser ? elements.inputUser.value.trim() : 'admin',
+          password: elements.inputPass ? elements.inputPass.value : '',
+          quality: elements.selectQuality ? elements.selectQuality.value : 'main'
+        };
 
-      elements.btnSubmitLogin.disabled = false;
-      elements.btnSpinner.classList.add('hidden');
-      elements.btnSubmitText.textContent = 'Conectar à Câmera';
-    });
+        if (elements.checkboxRemember && elements.checkboxRemember.checked) {
+          saveCredentials(creds);
+        } else {
+          clearCredentials();
+        }
+
+        await connectCamera(creds);
+
+        if (elements.btnSubmitLogin) {
+          elements.btnSubmitLogin.disabled = false;
+          if (elements.btnSpinner) elements.btnSpinner.classList.add('hidden');
+          if (elements.btnSubmitText) elements.btnSubmitText.textContent = 'Conectar à Câmera';
+        }
+      });
+    }
 
     elements.btnDisconnect.addEventListener('click', async () => {
       stopWebRtcStream();
+      stopGridStreams();
       state.connected = false;
-      elements.statusDot.style.backgroundColor = 'var(--accent-red)';
-      elements.badgeConnStatus.textContent = 'Desconectado';
-      elements.badgeConnStatus.className = 'badge';
-      setLoadingState(true, 'Câmera desconectada. Clique em Conexão para entrar.');
+      if (elements.statusDot) elements.statusDot.style.backgroundColor = 'var(--accent-red)';
+      if (elements.badgeConnStatus) {
+        elements.badgeConnStatus.textContent = 'Desconectado';
+        elements.badgeConnStatus.className = 'badge';
+      }
+      setLoadingState(true, 'Câmera desconectada. Clique em Configuração para gerenciar conexões.');
       clearCredentials();
-      openLoginModal();
+      const cam = state.cameras.find((c) => c.id === state.selectedCameraId) || state.cameras[0] || null;
+      openCameraModal(cam);
     });
 
     elements.audioUnmuteBanner.addEventListener('click', unmuteAudio);
@@ -758,6 +1375,76 @@
     });
 
     setupPtzControls();
+
+    // Seletores de Layout VMS
+    elements.btnLayout1x1.addEventListener('click', () => setLayout('1x1'));
+    elements.btnLayout2x2.addEventListener('click', () => setLayout('2x2'));
+    elements.btnLayout3x3.addEventListener('click', () => setLayout('3x3'));
+
+    // Modal de Cadastro/Edição de Câmeras
+    elements.btnAddCamera.addEventListener('click', () => openCameraModal());
+    elements.camDialogCloseBtn.addEventListener('click', closeCameraModal);
+
+    elements.camSelectBrand.addEventListener('change', (e) => {
+      applyBrandPresetPorts(e.target.value);
+    });
+
+    elements.btnToggleCamPass.addEventListener('click', () => {
+      const isPass = elements.camInputPass.type === 'password';
+      elements.camInputPass.type = isPass ? 'text' : 'password';
+      elements.camIconEyeShow.classList.toggle('hidden', isPass);
+      elements.camIconEyeHide.classList.toggle('hidden', !isPass);
+    });
+
+    elements.btnTestCamera.addEventListener('click', testCameraConnection);
+
+    elements.cameraForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      elements.btnSaveCamera.disabled = true;
+      elements.btnSaveSpinner.classList.remove('hidden');
+      elements.btnSaveText.textContent = 'Salvando...';
+      elements.camFormFeedback.classList.add('hidden');
+
+      const id = elements.camInputId.value;
+      const camData = {
+        name: elements.camInputName.value.trim(),
+        brand: elements.camSelectBrand.value,
+        ip: elements.camInputIp.value.trim(),
+        rtsp_port: parseInt(elements.camInputRtspPort.value.trim(), 10) || 554,
+        onvif_port: elements.camInputOnvifPort.value.trim() ? parseInt(elements.camInputOnvifPort.value.trim(), 10) : null,
+        username: elements.camInputUser.value.trim(),
+        password: elements.camInputPass.value,
+        has_ptz: elements.camCheckboxPtz.checked ? 1 : 0
+      };
+
+      try {
+        const url = id ? `/api/cameras/${id}` : '/api/cameras';
+        const method = id ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(camData)
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          closeCameraModal();
+          await loadCameras();
+          if (data.camera && data.camera.id) {
+            selectCamera(data.camera.id);
+          }
+        } else {
+          showCamFormFeedback(data.error || 'Erro ao salvar câmera', 'error');
+        }
+      } catch (err) {
+        showCamFormFeedback(`Erro de rede ao salvar: ${err.message}`, 'error');
+      } finally {
+        elements.btnSaveCamera.disabled = false;
+        elements.btnSaveSpinner.classList.add('hidden');
+        elements.btnSaveText.textContent = id ? 'Salvar Alterações' : 'Cadastrar Câmera';
+      }
+    });
   }
 
   /* ==========================================================================
@@ -788,8 +1475,11 @@
     setupDevHotReload();
     startAntiFreezeWatchdog();
 
+    // Carrega a lista de câmeras registradas no SQLite
+    await loadCameras();
+
     const saved = getSavedCredentials();
-    if (saved && saved.ip && saved.user) {
+    if (state.cameras.length === 0 && saved && saved.ip && saved.user) {
       elements.inputIp.value = saved.ip;
       elements.inputPort.value = saved.port || 554;
       elements.inputUser.value = saved.user;
@@ -802,8 +1492,6 @@
         return;
       }
     }
-
-    openLoginModal();
   }
 
   if (document.readyState === 'loading') {

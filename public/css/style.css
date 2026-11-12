@@ -691,8 +691,8 @@ dialog:modal {
   background: transparent;
   border: none;
   padding: 0;
-  max-width: 480px;
-  width: 90vw;
+  max-width: 650px;
+  width: 95vw;
   margin: auto;
   overscroll-behavior: contain; /* Obrigatório pelo guia moderno */
 }
@@ -709,8 +709,9 @@ dialog::backdrop {
   background: var(--bg-surface);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-xl);
-  padding: 24px;
+  padding: 24px 28px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
+  box-sizing: border-box;
 }
 
 .dialog-header {
@@ -767,26 +768,33 @@ dialog::backdrop {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: 100%;
 }
 
 .form-row {
   display: flex;
-  gap: 12px;
+  gap: 14px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.flex-1 { flex: 1; }
-.flex-2 { flex: 2; }
+.flex-1 { flex: 1 1 0; min-width: 90px; }
+.flex-2 { flex: 2 1 0; min-width: 140px; }
+.flex-3 { flex: 3 1 0; min-width: 200px; }
 
 .form-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .form-group label {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .form-group input,
@@ -798,6 +806,8 @@ dialog::backdrop {
   color: var(--text-primary);
   font-size: 0.9rem;
   font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -955,4 +965,244 @@ dialog::backdrop {
 /* Utilitários */
 .hidden {
   display: none !important;
+}
+
+/* ==========================================================================
+   VMS Multi-Camera Grid & Dynamic Layouts
+   ========================================================================== */
+
+.layout-selector-group {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  gap: 2px;
+}
+
+.layout-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-mono);
+}
+
+.layout-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.layout-btn.active {
+  background: var(--accent-blue);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(14, 165, 233, 0.4);
+}
+
+/* VMS Grid Viewport */
+.vms-grid-viewport {
+  display: grid;
+  width: 100%;
+  gap: 12px;
+  transition: all 0.3s ease;
+}
+
+.vms-grid-viewport.layout-1x1 {
+  grid-template-columns: 1fr;
+}
+
+.vms-grid-viewport.layout-2x2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.vms-grid-viewport.layout-3x3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 900px) {
+  .vms-grid-viewport.layout-2x2,
+  .vms-grid-viewport.layout-3x3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Célula do Grid */
+.vms-grid-cell {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #000000;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  aspect-ratio: 16 / 9;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vms-grid-cell:hover {
+  border-color: rgba(14, 165, 233, 0.3);
+}
+
+.vms-grid-cell.active-camera {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 18px rgba(14, 165, 233, 0.45);
+}
+
+.vms-grid-cell video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000000;
+}
+
+/* Header flutuante de cada célula */
+.cell-top-bar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.cell-info-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.cell-brand-tag {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  color: var(--accent-blue);
+  font-weight: 700;
+}
+
+.cell-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.cell-action-btn {
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cell-action-btn:hover {
+  background: rgba(14, 165, 233, 0.4);
+  border-color: var(--accent-blue);
+}
+
+.cell-action-btn.active {
+  background: var(--accent-green);
+  color: #ffffff;
+}
+
+/* Célula Vazia de Adicionar Câmera */
+.vms-empty-cell {
+  aspect-ratio: 16 / 9;
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.vms-empty-cell:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  background: rgba(14, 165, 233, 0.05);
+}
+
+.vms-empty-cell svg {
+  stroke: currentColor;
+}
+
+/* Lista de Câmeras Cadastradas no Painel */
+.camera-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.camera-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.camera-item-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.camera-item-card.selected {
+  border-color: var(--accent-blue);
+  background: rgba(14, 165, 233, 0.12);
+}
+
+.cam-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cam-item-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cam-item-ip {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.cam-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }

@@ -25,16 +25,28 @@
 
       <div class="header-center">
         <div class="live-clock" id="live-clock">--:--:--</div>
+        <div class="layout-selector-group">
+          <button type="button" class="layout-btn active" data-layout="1x1" id="btn-layout-1x1" title="Foco 1x1 (Alta Definição)">1x1</button>
+          <button type="button" class="layout-btn" data-layout="2x2" id="btn-layout-2x2" title="Grid 2x2 (Até 4 Câmeras)">2x2</button>
+          <button type="button" class="layout-btn" data-layout="3x3" id="btn-layout-3x3" title="Grid 3x3 (Até 9 Câmeras)">3x3</button>
+        </div>
         <div class="stream-pill" id="stream-quality-pill">1080p Full HD</div>
       </div>
 
       <div class="header-right">
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-open-settings" title="Configurações de Conexão">
+        <button type="button" class="btn btn-primary btn-sm" id="btn-add-camera" title="Cadastrar Nova Câmera">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>Nova Câmera</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-open-settings" title="Configurar Câmera">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
-          <span>Conexão</span>
+          <span>Configuração</span>
         </button>
         <button type="button" class="btn btn-outline-danger btn-sm" id="btn-disconnect" title="Desconectar da Câmera">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -48,6 +60,10 @@
 
     <!-- Área Principal de Vídeo -->
     <main class="main-viewport">
+      <!-- Grid Multi-Câmeras Dinâmico (Modos 2x2 e 3x3) -->
+      <div class="vms-grid-viewport layout-2x2 hidden" id="vms-grid-viewport"></div>
+
+      <!-- Container do Player Foco / Câmera Única (Modo 1x1) -->
       <div class="video-card glass-card" id="video-card-container">
         <!-- Elemento de Vídeo HTML5 -->
         <video id="video-player" autoplay playsinline muted></video>
@@ -163,7 +179,7 @@
               </svg>
               Controle PTZ (Movimento)
             </h3>
-            <span class="card-subtitle">Use as setas do teclado</span>
+            <span class="card-subtitle" id="ptz-active-target-label">Use as setas do teclado</span>
           </div>
 
           <div class="ptz-content">
@@ -200,41 +216,21 @@
           </div>
         </div>
 
-        <!-- Card 2: Informações Técnicas e Diagnósticos -->
-        <div class="card glass-card info-card">
+        <!-- Card 2: Câmeras Cadastradas no VMS -->
+        <div class="card glass-card camera-list-card">
           <div class="card-header">
             <h3 class="card-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
               </svg>
-              Diagnóstico da Câmera
+              Câmeras do Sistema
             </h3>
-            <span class="badge badge-success" id="badge-conn-status">Online</span>
+            <span class="badge badge-success" id="badge-total-cameras">0 câmeras</span>
           </div>
 
-          <div class="diag-list">
-            <div class="diag-item">
-              <span class="diag-label">Endereço IP:</span>
-              <span class="diag-val" id="diag-ip">--</span>
-            </div>
-            <div class="diag-item">
-              <span class="diag-label">Dispositivo:</span>
-              <span class="diag-val" id="diag-model">Besder XM530</span>
-            </div>
-            <div class="diag-item">
-              <span class="diag-label">Firmware:</span>
-              <span class="diag-val" id="diag-fw">ONVIF 16.12</span>
-            </div>
-            <div class="diag-item">
-              <span class="diag-label">Pipeline de Vídeo:</span>
-              <span class="diag-val">H.264 (AVC) • WebRTC Ultra-Low Latency</span>
-            </div>
-            <div class="diag-item">
-              <span class="diag-label">Pipeline de Áudio:</span>
-              <span class="diag-val">G.711 A-law (PCMA) 8kHz Mono</span>
-            </div>
+          <div class="camera-items-list" id="camera-items-list">
+            <!-- Renderizado dinamicamente pelo JS -->
           </div>
         </div>
 
@@ -260,8 +256,8 @@
     </main>
   </div>
 
-  <!-- Modal Nativo <dialog> de Conexão e Autenticação (Modern Web Guidance) -->
-  <dialog id="login-dialog" aria-labelledby="dialog-title" closedby="closerequest">
+  <!-- Modal Nativo <dialog> de Cadastro/Edição de Câmera (VMS Multi-Câmeras) -->
+  <dialog id="camera-dialog" aria-labelledby="cam-dialog-title" closedby="closerequest">
     <div class="dialog-content glass-card">
       <div class="dialog-header">
         <div class="dialog-title-group">
@@ -272,65 +268,88 @@
             </svg>
           </div>
           <div>
-            <h2 id="dialog-title">Conectar à Câmera Besder</h2>
-            <p class="dialog-desc">Insira as credenciais configuradas no app ICSee</p>
+            <h2 id="cam-dialog-title">Configurar Câmera</h2>
+            <p class="dialog-desc">Suporta qualquer marca (Intelbras, Hikvision, Tapo, Besder, Genérico)</p>
           </div>
         </div>
-        <button type="button" class="dialog-close-btn" id="dialog-close-btn" aria-label="Fechar">
+        <button type="button" class="dialog-close-btn" id="cam-dialog-close-btn" aria-label="Fechar">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
 
-      <form id="login-form" class="login-form">
+      <form id="camera-form" class="login-form">
+        <input type="hidden" id="cam-input-id" name="id" value="">
+
         <div class="form-row">
           <div class="form-group flex-2">
-            <label for="input-ip">Endereço IP da Câmera</label>
-            <input type="text" id="input-ip" name="ip" value="192.168.0.23" required placeholder="Ex: 192.168.0.23">
+            <label for="cam-input-name">Nome da Câmera</label>
+            <input type="text" id="cam-input-name" name="name" required placeholder="Ex: Entrada Principal, Garagem">
+          </div>
+          <div class="form-group flex-2">
+            <label for="cam-select-brand">Fabricante / Preset</label>
+            <select id="cam-select-brand" name="brand">
+              <option value="besder">Besder / Xiongmai / ICSee</option>
+              <option value="intelbras">Intelbras</option>
+              <option value="dahua">Dahua</option>
+              <option value="hikvision">Hikvision</option>
+              <option value="tapo">TP-Link Tapo</option>
+              <option value="generic">Genérico (RTSP / ONVIF)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="cam-input-ip">Endereço IP</label>
+            <input type="text" id="cam-input-ip" name="ip" required placeholder="Ex: 192.168.0.23">
           </div>
           <div class="form-group flex-1">
-            <label for="input-port">Porta RTSP</label>
-            <input type="number" id="input-port" name="port" value="554" required>
+            <label for="cam-input-rtsp-port">Porta RTSP</label>
+            <input type="number" id="cam-input-rtsp-port" name="rtsp_port" value="554" required>
+          </div>
+          <div class="form-group flex-1">
+            <label for="cam-input-onvif-port">Porta ONVIF (PTZ)</label>
+            <input type="number" id="cam-input-onvif-port" name="onvif_port" value="8899" placeholder="8899/80">
           </div>
         </div>
 
-        <div class="form-group">
-          <label for="input-user">Usuário</label>
-          <input type="text" id="input-user" name="user" value="admin" required placeholder="Geralmente admin">
-        </div>
-
-        <div class="form-group">
-          <label for="input-pass">Senha da Câmera</label>
-          <div class="password-wrapper">
-            <input type="password" id="input-pass" name="password" autofocus placeholder="Senha cadastrada no ICSee">
-            <button type="button" class="btn-toggle-pass" id="btn-toggle-pass" title="Mostrar/Ocultar Senha">
-              <svg id="icon-eye-show" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-              <svg id="icon-eye-hide" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
-            </button>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="cam-input-user">Usuário</label>
+            <input type="text" id="cam-input-user" name="username" value="admin" required>
           </div>
-          <span class="field-hint">Esta é a senha criada no aplicativo ICSee no celular.</span>
+          <div class="form-group flex-2">
+            <label for="cam-input-pass">Senha da Câmera</label>
+            <div class="password-wrapper">
+              <input type="password" id="cam-input-pass" name="password" placeholder="Senha da câmera (AES-256)">
+              <button type="button" class="btn-toggle-pass" id="btn-toggle-cam-pass" title="Mostrar/Ocultar Senha">
+                <svg id="cam-icon-eye-show" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <svg id="cam-icon-eye-hide" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+              </button>
+            </div>
+            <span class="field-hint" id="cam-pass-hint">Armazenada de forma segura com criptografia AES-256-GCM.</span>
+          </div>
         </div>
 
-        <div class="form-group">
-          <label for="select-quality">Qualidade de Inicialização</label>
-          <select id="select-quality" name="quality">
-            <option value="main" selected>Principal HD 1080p (Máxima Definição)</option>
-            <option value="sub">Secundário SD (Fluido / Menor Tráfego)</option>
-          </select>
+        <div class="form-row">
+          <div class="form-checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cam-checkbox-ptz" name="has_ptz" checked>
+              <span>Suporte a Controle PTZ (Câmera Motorizada)</span>
+            </label>
+          </div>
         </div>
 
-        <div class="form-checkbox-group">
-          <label class="checkbox-label">
-            <input type="checkbox" id="checkbox-remember" checked>
-            <span>Lembrar credenciais neste computador</span>
-          </label>
-        </div>
+        <div class="form-feedback hidden" id="cam-form-feedback"></div>
 
-        <div class="form-feedback hidden" id="form-feedback"></div>
-
-        <div class="dialog-actions">
-          <button type="submit" class="btn btn-primary btn-block" id="btn-submit-login">
-            <span class="btn-spinner hidden" id="btn-spinner"></span>
-            <span id="btn-submit-text">Conectar à Câmera</span>
+        <div class="dialog-actions" style="display: flex; gap: 10px;">
+          <button type="button" class="btn btn-secondary" id="btn-test-camera" style="flex: 1;">
+            <span class="btn-spinner hidden" id="btn-test-spinner"></span>
+            <span id="btn-test-text">Testar Conexão</span>
+          </button>
+          <button type="submit" class="btn btn-primary" id="btn-save-camera" style="flex: 2;">
+            <span class="btn-spinner hidden" id="btn-save-spinner"></span>
+            <span id="btn-save-text">Salvar Câmera</span>
           </button>
         </div>
       </form>

@@ -45,3 +45,10 @@ yarn-error.log*
 .port
 captures/
 snapshots/
+
+# Banco de dados SQLite local e chaves de segurança
+data/
+.playwright-mcp/
+*.db
+*.db-journal
+*.secret.key

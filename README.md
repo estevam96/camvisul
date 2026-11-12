@@ -1,35 +1,48 @@
-# 📹 CamVisul
+# 📹 CamVisul VMS
 
-> **Visualizador em tempo real para Câmeras IP Besder / Xiongmai (ICSee) diretamente pelo computador, com vídeo e áudio nativos sincronizados e latência inferior a 200ms.**
+> **Sistema de Videomonitoramento (VMS / CFTV) em tempo real para computador, com matriz de visualização em Grid (1x1, 2x2, 3x3), suporte universal a múltiplas câmeras de qualquer fabricante, áudio e vídeo sincronizados e latência ultrabaixa (< 200ms).**
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green.svg)](https://nodejs.org/)
-[![WebRTC](https://img.shields.io/badge/Streaming-WebRTC-blue.svg)](https://webrtc.org/)
-[![Hardware](https://img.shields.io/badge/C%C3%A2mera-Besder%20XM530-orange.svg)](#)
-[![Design](https://img.shields.io/badge/UI-Clean%20%26%20Modern-purple.svg)](#)
+[![WebRTC](https://img.shields.io/badge/Streaming-WebRTC%20Ultra--Low%20Latency-blue.svg)](https://webrtc.org/)
+[![Database](https://img.shields.io/badge/Storage-SQLite%20Local-yellow.svg)](https://sqlite.org/)
+[![Security](https://img.shields.io/badge/Security-AES--256--GCM-red.svg)](#)
+[![Hardware](https://img.shields.io/badge/Compatibilidade-Multi--Marca%20ONVIF%20%2F%20RTSP-orange.svg)](#)
 
 ---
 
 ## 🎯 Por que o CamVisul foi criado?
 
-As câmeras IP residenciais controladas pelo aplicativo **ICSee** (fabricadas pela **Besder** com chipsets Xiongmai/Sofia):
-1. **Só funcionam oficialmente no celular:** Os aplicativos oficiais da fabricante só existem para Android e iOS.
-2. **Web legada inacessível:** A interface web interna da câmera (porta 80) foi desenvolvida para o Internet Explorer antigo e exige um plugin ActiveX (`.ocx`) de 32 bits, que não funciona em nenhum navegador moderno (Chrome, Edge, Safari, Firefox) nem no macOS/Linux.
-3. **Ausência de suporte nativo a RTSP no navegador:** Navegadores não tocam links `rtsp://` diretamente nem decodificam áudio G.711 A-law em tags de vídeo HTML5 sem transcodificação.
+1. **Restrição aos Aplicativos Móveis:** A maioria das câmeras residenciais e comerciais (Besder/ICSee, Intelbras, Tapo, etc.) depende de aplicativos de celular fechados.
+2. **Web Legada Incompatível:** Interfaces web internas de câmeras IP frequentemente dependem de plugins ActiveX (`.ocx`) de 32 bits do Internet Explorer legado, incompatíveis com Chrome, Safari, Edge e macOS/Linux.
+3. **Incompatibilidade RTSP Nativa:** Navegadores não reproduzem streams `rtsp://` diretamente nem decodificam codecs legados de áudio (como G.711 A-law) sem transcodificação.
+4. **Falta de uma Central VMS Leve para Desktop:** Sistemas profissionais de CFTV costumam ser pesados, caros ou exigir configurações complexas de NVR.
 
-O **CamVisul** resolve tudo isso: ele conecta-se diretamente à câmera via rede local, empacota os fluxos de vídeo H.264 e áudio G.711A em **WebRTC de latência ultrabaixa (< 200ms)** e apresenta tudo em um painel escuro profissional, moderno e limpo.
+O **CamVisul** resolve tudo isso: ele conecta-se diretamente às câmeras na sua rede local, empacota os fluxos de vídeo H.264 e áudio em **WebRTC de latência ultrabaixa (< 200ms)** e apresenta uma central de monitoramento moderna, escura e completa diretamente no seu navegador.
 
 ---
 
 ## ✨ Principais Funcionalidades
 
-- **⚡ Streaming em Tempo Real (< 200ms):** Pipeline WebRTC direto, sem buffers longos de HLS (6-15s).
-- **🔊 Áudio e Vídeo Sincronizados:** Captação de som contínua pelo microfone da câmera com controle de volume e botão de áudio inteligente (respeitando as políticas de autoplay do navegador).
-- **📊 Medidor de Captação Sonora (Audio Meter):** Visualizador em tempo real (Web Audio API) que indica as ondas sonoras captadas pela câmera.
-- **🎮 Controle PTZ (Pan / Tilt / Zoom):** D-Pad na tela e suporte completo a **setas do teclado (↑ ↓ ← → e + / -)** para movimentar a câmera motorizada via ONVIF.
-- **📸 Captura de Fotos (Snapshots):** Download instantâneo de imagens em alta resolução com data e hora.
-- **🎚️ Alternador de Qualidade (HD / SD):** Troca dinâmica entre Stream Principal (1080p Full HD) e Stream Secundário (SD fluido).
-- **🔒 Modal de Login Acessível:** Interface nativa `<dialog>` (conforme diretrizes W3C Modern Web), solicitando usuário e senha cadastrados no app ICSee, com opção de salvar credenciais no computador.
-- **🖥️ Modo Tela Cheia e Miniatura (PiP):** Suporte a Picture-in-Picture para monitorar enquanto você trabalha em outras janelas.
+- **🎛️ Matriz de Monitoramento em Grid (1x1, 2x2, 3x3):**
+  - Alterne entre visão individual em **1x1** (Foco HD), **2x2** (até 4 câmeras simultâneas) ou **3x3** (até 9 câmeras simultâneas).
+  - Dê duplo clique em qualquer quadrante para expandir instantaneamente para o modo 1x1 em alta resolução.
+- **🌐 Suporte Universal Multi-Marca:**
+  - Presets inteligentes com preenchimento automático de portas para **Intelbras**, **Hikvision**, **Dahua**, **TP-Link Tapo**, **Besder / Xiongmai / ICSee** e câmeras genéricas **RTSP / ONVIF**.
+- **⚡ Streaming WebRTC em Tempo Real (< 200ms):**
+  - Conexão ponto a ponto direta, sem atrasos longos de buffer de HLS (6-15s).
+- **🚀 Otimização Inteligente de Banda e GPU:**
+  - No modo Grid, as câmeras transmitem automaticamente o **Substream (SD)** para poupar GPU e rede.
+  - Ao focar em 1x1, o fluxo comuta dinamicamente para o **Mainstream (1080p Full HD)**.
+- **🔐 Criptografia Forte de Senhas em Repouso (AES-256-GCM):**
+  - Todas as senhas salvas no SQLite (`data/camvisul.db`) são protegidas com criptografia simétrica autenticada **AES-256-GCM** e chave exclusiva da máquina. Senhas nunca são expostas em texto puro na API.
+- **🎮 Controle PTZ Contextual (Pan / Tilt / Zoom):**
+  - Clique em qualquer câmera do grid para selecioná-la. Os comandos do D-Pad na tela e os **atalhos de teclado (↑ ↓ ← → e + / -)** serão direcionados automaticamente para a câmera ativa.
+- **🔊 Áudio Exclusivo e Medidor Sonoro (VU Meter):**
+  - No modo Grid, as câmeras iniciam com áudio mudo. Ativar o som em uma câmera silencia automaticamente as outras, prevenindo sobreposição e ruídos.
+- **📸 Captura Instantânea de Fotos (Snapshots):**
+  - Download rápido de fotos em alta resolução direto de qualquer câmera do grid.
+- **🖥️ PiP e Tela Cheia:**
+  - Modo Picture-in-Picture flutuante e modo tela cheia para monitoramento contínuo.
 
 ---
 
@@ -47,7 +60,7 @@ Se você estiver editando o código do frontend ou backend:
 ```bash
 npm run start:dev
 ```
-*(Ou `./start.sh dev`)*. Qualquer alteração em arquivos de `src/`, `config/` ou `public/` reiniciará o servidor e recarregará a aba do navegador automaticamente!
+*(Ou `./start.sh dev`)*. Qualquer alteração em arquivos de `src/`, `config/` ou `public/` reiniciará o servidor e atualizará a aba do navegador automaticamente!
 
 ### Método Manual
 ```bash
@@ -58,15 +71,15 @@ Abra seu navegador em `http://localhost:3000`.
 
 ---
 
-## 🔑 Primeiro Acesso
+## 🔑 Gerenciando Câmeras
 
-1. No modal de conexão:
-   - **IP:** Endereço IP da câmera na sua rede local (ex: `192.168.1.100`).
-   - **Porta:** `554` (RTSP padrão).
-   - **Usuário:** `admin` (padrão).
-   - **Senha:** Digite a senha criada para a câmera no aplicativo ICSee do celular.
-2. Clique em **"Conectar à Câmera"**.
-3. O vídeo e o áudio em tempo real serão carregados imediatamente!
+1. Clique no botão **"Nova Câmera"** no cabeçalho ou clique em um espaço vago no Grid.
+2. Selecione o **Fabricante / Preset** (ex: *Intelbras*, *Hikvision*, *Tapo*, *Besder* ou *Genérico*):
+   - As portas RTSP e ONVIF serão preenchidas automaticamente.
+3. Preencha o **Nome**, **Endereço IP** e as **Credenciais** da câmera.
+4. Clique em **"Testar Conexão"** para validar o acesso na rede.
+5. Clique em **"Cadastrar Câmera"** para salvar no banco local SQLite com senha criptografada.
+6. A câmera aparecerá imediatamente no Grid de monitoramento!
 
 ---
 
@@ -74,10 +87,10 @@ Abra seu navegador em `http://localhost:3000`.
 
 | Tecla | Ação |
 |---|---|
-| `↑` `↓` `←` `→` | Movimenta a câmera (Pan & Tilt) |
+| `↑` `↓` `←` `→` | Movimenta a câmera selecionada (Pan & Tilt) |
 | `+` ou `=` | Aproxima o Zoom |
 | `-` | Afasta o Zoom |
-| `M` | Ativa / Desativa o som do microfone da câmera |
+| `M` | Ativa / Desativa o áudio da câmera selecionada |
 | `S` | Tira uma foto (Snapshot em alta resolução) |
 | `F` | Alterna modo Tela Cheia |
 
@@ -88,9 +101,9 @@ Abra seu navegador em `http://localhost:3000`.
 Todas as decisões arquiteturais e de implementação estão detalhadas na pasta `doc/`:
 
 - [📐 Arquitetura do Sistema](doc/architecture/doc.md): Diagramas de fluxo, separação de camadas e engine de streaming.
-- [📡 Protocolos da Câmera Besder](doc/camera-protocols/doc.md): Mapeamento de portas (554, 8899, 80, 34567), codecs H.264 e G.711A.
+- [📡 Protocolos da Câmera Besder e Fabricantes](doc/camera-protocols/doc.md): Mapeamento de portas (554, 8899, 80, 8000, 2020), codecs H.264 e G.711A.
 - [⚡ Pipeline de Streaming em Tempo Real](doc/realtime-streaming/doc.md): Como o WebRTC entrega latência sub-segundo e sincronismo de áudio.
-- [🔐 Autenticação e Segurança](doc/authentication/doc.md): Digest MD5 RFC 2617 e proteção de credenciais locais.
-- [🎮 Controles PTZ (Pan/Tilt/Zoom)](doc/ptz-controls/doc.md): Integração ONVIF SOAP e atalhos de teclado.
+- [🔐 Autenticação e Segurança](doc/authentication/doc.md): Criptografia AES-256-GCM em repouso e Digest MD5 RFC 2617.
+- [🎮 Controles PTZ (Pan/Tilt/Zoom)](doc/ptz-controls/doc.md): Integração ONVIF SOAP e roteamento contextual.
 - [🎨 Design de UI/UX e Modern Web Guidance](doc/ui-ux-design/doc.md): Conformidade com padrões modernos HTML5/CSS e `<dialog>`.
 - [📖 Guia de Inicialização e Uso](doc/getting-started/doc.md): Manual de instruções e resolução de problemas.

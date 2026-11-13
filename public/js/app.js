@@ -57,6 +57,7 @@
     ptzButtons: document.querySelectorAll('.ptz-dpad .ptz-btn:not(#ptz-stop-btn)'),
     ptzStopBtn: document.getElementById('ptz-stop-btn'),
     ptzZoomButtons: document.querySelectorAll('.ptz-zoom-btn'),
+    btnDigitalZoom: document.getElementById('btn-digital-zoom'),
 
     // Diagnósticos e Galeria
     diagIp: document.getElementById('diag-ip'),
@@ -146,6 +147,11 @@
     volume: 0.8,
     snapshots: [],
     ptzMoving: false,
+    ptzMoveStartTime: 0,
+    ptzStopTimer: null,
+    digitalZoom: 1,
+    digitalPanX: 0,
+    digitalPanY: 0,
     latencyStartTime: 0,
     retryCount: 0,
 
@@ -513,40 +519,167 @@
   /* ==========================================================================
      6. Alternância de Qualidade (HD / SD)
      ========================================================================== */
+  function getStreamNameForQuality(quality) {
+    const suffix = quality === 'sub' ? 'sub' : 'main';
+    if (state.selectedCameraId) {
+      return `cam_${state.selectedCameraId}_${suffix}`;
+    }
+    return `besder_${suffix}`;
+  }
+
   async function switchStreamQuality(quality) {
     if (!state.connected) return;
-    const streamName = quality === 'sub' ? 'besder_sub' : 'besder_main';
+    const streamName = getStreamNameForQuality(quality);
     if (state.activeStream === streamName) return;
 
+    state.retryCount = 0;
     state.activeStream = streamName;
     updateQualityUi();
     await startWebRtcStream(state.activeStream);
   }
 
   function updateQualityUi() {
-    const isHd = state.activeStream === 'besder_main';
+    const isHd = !String(state.activeStream || '').endsWith('_sub');
     elements.btnStreamHd.classList.toggle('active', isHd);
     elements.btnStreamSd.classList.toggle('active', !isHd);
     elements.qualityPill.textContent = isHd ? '1080p Full HD' : 'SD Fluido';
   }
 
   /* ==========================================================================
-     7. Controle PTZ (Pan / Tilt / Zoom)
+     7. Controle PTZ (Pan / Tilt / Zoom) & Zoom Digital
      ========================================================================== */
+  const PTZ_MIN_PULSE_MS = 220;
+
   async function sendPtzCommand(action, pan = 0, tilt = 0, zoom = 0) {
     try {
       const url = state.selectedCameraId
         ? `/api/cameras/${state.selectedCameraId}/ptz`
         : '/api/ptz';
 
-      await fetch(url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, pan, tilt, zoom })
       });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        console.warn('[PTZ] Erro na resposta do servidor:', errData.error || response.status);
+      }
     } catch (e) {
       console.warn('[PTZ] Falha ao enviar comando:', e);
     }
+  }
+
+  function startPtzMove(pan = 0, tilt = 0, zoom = 0) {
+    if (state.ptzStopTimer) {
+      clearTimeout(state.ptzStopTimer);
+      state.ptzStopTimer = null;
+    }
+    state.ptzMoving = true;
+    state.ptzMoveStartTime = Date.now();
+    sendPtzCommand('move', pan, tilt, zoom);
+  }
+
+  function stopPtzMove() {
+    if (!state.ptzMoving) return;
+    state.ptzMoving = false;
+    const elapsed = Date.now() - state.ptzMoveStartTime;
+    const remaining = PTZ_MIN_PULSE_MS - elapsed;
+
+    if (remaining > 0) {
+      state.ptzStopTimer = setTimeout(() => {
+        state.ptzStopTimer = null;
+        sendPtzCommand('stop');
+      }, remaining);
+    } else {
+      sendPtzCommand('stop');
+    }
+  }
+
+  function stepDigitalZoom(delta) {
+    state.digitalZoom = Math.min(4, Math.max(1, Math.round((state.digitalZoom + delta) * 100) / 100));
+    applyDigitalZoom();
+  }
+
+  function applyDigitalZoom() {
+    if (!elements.videoPlayer) return;
+    if (state.digitalZoom <= 1) {
+      state.digitalZoom = 1;
+      state.digitalPanX = 0;
+      state.digitalPanY = 0;
+      elements.videoPlayer.style.transform = '';
+      elements.videoPlayer.style.cursor = '';
+    } else {
+      elements.videoPlayer.style.transform = `translate(${state.digitalPanX}px, ${state.digitalPanY}px) scale(${state.digitalZoom})`;
+      elements.videoPlayer.style.cursor = 'grab';
+    }
+    if (elements.btnDigitalZoom) {
+      elements.btnDigitalZoom.textContent = `Digital: ${state.digitalZoom.toFixed(1)}x`;
+      elements.btnDigitalZoom.classList.toggle('active', state.digitalZoom > 1);
+    }
+  }
+
+  function setupDigitalZoomControls() {
+    if (elements.btnDigitalZoom) {
+      elements.btnDigitalZoom.addEventListener('click', () => {
+        const steps = [1, 1.5, 2, 3, 4];
+        const next = steps.find((s) => s > state.digitalZoom + 0.05) || 1;
+        state.digitalZoom = next;
+        applyDigitalZoom();
+      });
+    }
+
+    if (!elements.videoPlayer) return;
+
+    elements.videoPlayer.addEventListener('wheel', (e) => {
+      if (state.currentLayout !== '1x1') return;
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.25 : -0.25;
+      state.digitalZoom = Math.min(4, Math.max(1, Math.round((state.digitalZoom + delta) * 100) / 100));
+      applyDigitalZoom();
+    }, { passive: false });
+
+    elements.videoPlayer.addEventListener('dblclick', () => {
+      if (state.digitalZoom > 1) {
+        state.digitalZoom = 1;
+        applyDigitalZoom();
+      }
+    });
+
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let startPanX = 0;
+    let startPanY = 0;
+
+    elements.videoPlayer.addEventListener('mousedown', (e) => {
+      if (state.digitalZoom <= 1) return;
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      startPanX = state.digitalPanX;
+      startPanY = state.digitalPanY;
+      elements.videoPlayer.style.cursor = 'grabbing';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const rect = elements.videoPlayer.getBoundingClientRect();
+      const maxX = ((state.digitalZoom - 1) * rect.width) / (2 * state.digitalZoom);
+      const maxY = ((state.digitalZoom - 1) * rect.height) / (2 * state.digitalZoom);
+      state.digitalPanX = Math.max(-maxX, Math.min(maxX, startPanX + (e.clientX - dragStartX)));
+      state.digitalPanY = Math.max(-maxY, Math.min(maxY, startPanY + (e.clientY - dragStartY)));
+      applyDigitalZoom();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      if (state.digitalZoom > 1) {
+        elements.videoPlayer.style.cursor = 'grab';
+      }
+    });
   }
 
   function setupPtzControls() {
@@ -557,16 +690,14 @@
       const startMove = (e) => {
         e.preventDefault();
         btn.classList.add('active');
-        state.ptzMoving = true;
-        sendPtzCommand('move', pan, tilt, 0);
+        startPtzMove(pan, tilt, 0);
       };
 
       const stopMove = (e) => {
         e.preventDefault();
-        if (state.ptzMoving) {
+        if (btn.classList.contains('active')) {
           btn.classList.remove('active');
-          state.ptzMoving = false;
-          sendPtzCommand('stop');
+          stopPtzMove();
         }
       };
 
@@ -579,20 +710,40 @@
     });
 
     elements.ptzStopBtn.addEventListener('click', () => {
+      if (state.ptzStopTimer) {
+        clearTimeout(state.ptzStopTimer);
+        state.ptzStopTimer = null;
+      }
+      state.ptzMoving = false;
       sendPtzCommand('stop');
     });
 
     elements.ptzZoomButtons.forEach((btn) => {
       const zoom = parseFloat(btn.dataset.zoom || 0);
+      const zoomStep = zoom > 0 ? 0.25 : -0.25;
+      let zoomRepeatTimer = null;
 
       const startZoom = (e) => {
         e.preventDefault();
-        sendPtzCommand('move', 0, 0, zoom);
+        btn.classList.add('active');
+        stepDigitalZoom(zoomStep);
+        if (zoomRepeatTimer) clearInterval(zoomRepeatTimer);
+        zoomRepeatTimer = setInterval(() => {
+          stepDigitalZoom(zoomStep);
+        }, 220);
+        startPtzMove(0, 0, zoom);
       };
 
       const stopZoom = (e) => {
         e.preventDefault();
-        sendPtzCommand('stop');
+        if (zoomRepeatTimer) {
+          clearInterval(zoomRepeatTimer);
+          zoomRepeatTimer = null;
+        }
+        if (btn.classList.contains('active')) {
+          btn.classList.remove('active');
+          stopPtzMove();
+        }
       };
 
       btn.addEventListener('mousedown', startZoom);
@@ -601,6 +752,8 @@
       btn.addEventListener('mouseleave', stopZoom);
       btn.addEventListener('touchend', stopZoom);
     });
+
+    setupDigitalZoomControls();
   }
 
   /* ==========================================================================
@@ -894,6 +1047,7 @@
     if (!cam) return;
 
     state.connected = true;
+    state.retryCount = 0;
     const streamName = `cam_${cam.id}_main`;
     state.activeStream = streamName;
     updateQualityUi();
@@ -1494,26 +1648,28 @@
           break;
         case 'ArrowUp':
           e.preventDefault();
-          sendPtzCommand('move', 0, 0.5, 0);
+          if (!e.repeat) startPtzMove(0, 0.5, 0);
           break;
         case 'ArrowDown':
           e.preventDefault();
-          sendPtzCommand('move', 0, -0.5, 0);
+          if (!e.repeat) startPtzMove(0, -0.5, 0);
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          sendPtzCommand('move', -0.5, 0, 0);
+          if (!e.repeat) startPtzMove(-0.5, 0, 0);
           break;
         case 'ArrowRight':
           e.preventDefault();
-          sendPtzCommand('move', 0.5, 0, 0);
+          if (!e.repeat) startPtzMove(0.5, 0, 0);
           break;
         case '+':
         case '=':
-          sendPtzCommand('move', 0, 0, 0.5);
+          stepDigitalZoom(0.25);
+          if (!e.repeat) startPtzMove(0, 0, 0.5);
           break;
         case '-':
-          sendPtzCommand('move', 0, 0, -0.5);
+          stepDigitalZoom(-0.25);
+          if (!e.repeat) startPtzMove(0, 0, -0.5);
           break;
       }
     });
@@ -1521,7 +1677,7 @@
     document.addEventListener('keyup', (e) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '+', '=', '-'].includes(e.key)) {
-        sendPtzCommand('stop');
+        stopPtzMove();
       }
     });
 

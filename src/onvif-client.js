@@ -144,6 +144,18 @@ async function getStreamUri(ip, port = 8899, profileToken = 'PROFILE_000', usern
 }
 
 /**
+ * Verifica se a resposta SOAP ONVIF retornou erro HTTP ou SOAP Fault
+ */
+function assertSoapSuccess(res, operation) {
+  if (res.statusCode >= 400 || /<[^:>]*:Fault\b|<Fault\b/i.test(res.data || '')) {
+    const reasonMatch = (res.data || '').match(/<[^:>]*:Text[^>]*>([^<]+)<\/[^:>]*:Text>|<faultstring>([^<]+)<\/faultstring>/i);
+    const detail = reasonMatch ? (reasonMatch[1] || reasonMatch[2]) : `HTTP ${res.statusCode}`;
+    throw new Error(`ONVIF ${operation} falhou: ${detail}`);
+  }
+  return res;
+}
+
+/**
  * Envia comando de movimento contínuo PTZ
  * @param {string} ip
  * @param {number} port
@@ -155,16 +167,28 @@ async function getStreamUri(ip, port = 8899, profileToken = 'PROFILE_000', usern
  * @param {string} password
  */
 async function ptzContinuousMove(ip, port = 8899, pan = 0, tilt = 0, zoom = 0, profileToken = 'PROFILE_000', username = '', password = '') {
+  const hasPanTilt = pan !== 0 || tilt !== 0;
+  const hasZoom = zoom !== 0;
+
+  // Algumas câmeras ONVIF (ex: Xiongmai/Besder) ignoram Zoom se PanTilt vier com 0.00 junto (e vice-versa)
+  const velocityParts = [];
+  if (hasPanTilt || !hasZoom) {
+    velocityParts.push(`<tt:PanTilt x="${pan.toFixed(2)}" y="${tilt.toFixed(2)}" space="http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace"/>`);
+  }
+  if (hasZoom) {
+    velocityParts.push(`<tt:Zoom x="${zoom.toFixed(2)}" space="http://www.onvif.org/ver10/tptz/ZoomSpaces/VelocityGenericSpace"/>`);
+  }
+
   const body = `
     <tptz:ContinuousMove>
       <tptz:ProfileToken>${profileToken}</tptz:ProfileToken>
       <tptz:Velocity>
-        <tt:PanTilt x="${pan.toFixed(2)}" y="${tilt.toFixed(2)}" space="http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace"/>
-        <tt:Zoom x="${zoom.toFixed(2)}" space="http://www.onvif.org/ver10/tptz/ZoomSpaces/VelocityGenericSpace"/>
+        ${velocityParts.join('\n        ')}
       </tptz:Velocity>
     </tptz:ContinuousMove>`;
 
-  return sendSoapRequest(ip, port, '/onvif/ptz_service', body, username, password);
+  const res = await sendSoapRequest(ip, port, '/onvif/ptz_service', body, username, password);
+  return assertSoapSuccess(res, 'ContinuousMove');
 }
 
 /**
@@ -178,7 +202,8 @@ async function ptzStop(ip, port = 8899, profileToken = 'PROFILE_000', username =
       <tptz:Zoom>true</tptz:Zoom>
     </tptz:Stop>`;
 
-  return sendSoapRequest(ip, port, '/onvif/ptz_service', body, username, password);
+  const res = await sendSoapRequest(ip, port, '/onvif/ptz_service', body, username, password);
+  return assertSoapSuccess(res, 'Stop');
 }
 
 module.exports = {

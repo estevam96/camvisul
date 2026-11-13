@@ -603,6 +603,18 @@ html, body {
   padding: 8px 12px;
 }
 
+.ptz-digital-zoom-btn {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  justify-content: center;
+}
+
+.ptz-digital-zoom-btn.active {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.12);
+}
+
 /* Card 2: Diagnósticos */
 .diag-list {
   display: flex;
